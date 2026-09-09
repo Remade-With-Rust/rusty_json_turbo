@@ -9,7 +9,7 @@ cargo-fuzz = true
 
 [dependencies]
 libfuzzer-sys = "0.4"
-serde_json = { path = ".." }
+serde_json = { package = "rusty_json_turbo", path = ".." }
 
 [[bin]]
 name = "from_slice"

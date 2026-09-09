@@ -1,0 +1,25 @@
+[package]
+name = "rusty_json_turbo-cli"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+homepage.workspace = true
+rust-version.workspace = true
+description = "rjson: validate, pretty-print and minify JSON with rusty_json_turbo (consumer #1 of the library, never the only one)"
+publish = false
+
+[[bin]]
+name = "rjson"
+path = "src/main.rs"
+
+[dependencies]
+# The library, under the name consumers use. Its crate name is `serde_json`;
+# the key here is what code refers to it by.
+serde_json = { package = "rusty_json_turbo", path = "../.." }
+serde = { workspace = true }
+rusty_json_turbo-alloc = { path = "../rusty_json_turbo-alloc" }
+
+[lints]
+workspace = true

@@ -501,7 +501,7 @@ mod small {
         debug_assert!(n != 0);
         if !x.is_empty() {
             x.reserve(n);
-            x.splice(..0, iter::repeat(0).take(n));
+            x.splice(..0, iter::repeat_n(0, n));
         }
     }
 

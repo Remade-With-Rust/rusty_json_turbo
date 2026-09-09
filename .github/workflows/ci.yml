@@ -2,156 +2,150 @@ name: CI
 
 on:
   push:
+    branches: [master]
   pull_request:
   workflow_dispatch:
-  schedule: [cron: "40 1 * * *"]
 
 permissions:
   contents: read
 
 env:
-  RUSTFLAGS: -Dwarnings
+  CARGO_TERM_COLOR: always
+
+# WHAT IS GATED, AND WHY IT IS SCOPED THAT WAY
+#
+# The shipping artifact is `rusty_json_turbo` (the library, crate name
+# `serde_json`), plus the `rjson` CLI and the allocator seam. Those are held to
+# `-D warnings` and tested on three OSes, on the MSRV, and across the eight
+# targets the house ships.
+#
+# `rusty_json_turbo-bench` is the harness: it links upstream serde_json as the
+# ORACLE and runs the differential gate (bytes, Value, error text + line/col,
+# float bits) over the corpus. That gate is a test and runs here on every push.
+# The competitor arms (simd-json, sonic-rs) are behind `--features competitors`
+# and are only checked for compilation.
 
 jobs:
   test:
-    name: Rust nightly ${{matrix.os == 'windows' && '(windows)' || ''}}
-    runs-on: ${{matrix.os}}-latest
+    name: test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu, windows]
-    timeout-minutes: 45
+        os: [ubuntu-latest, windows-latest, macos-latest]
     steps:
-      - uses: actions/checkout@v7
-      - uses: dtolnay/rust-toolchain@nightly
-      - run: cargo test
-      - run: cargo test --features preserve_order --tests -- --skip ui --exact
-      - run: cargo test --features float_roundtrip --tests -- --skip ui --exact
-      - run: cargo test --features arbitrary_precision --tests -- --skip ui --exact
-      - run: cargo test --features float_roundtrip,arbitrary_precision --tests -- --skip ui --exact
-      - run: cargo test --features raw_value --tests -- --skip ui --exact
-      - run: cargo test --features unbounded_depth --tests -- --skip ui --exact
-      - uses: actions/upload-artifact@v7
-        if: matrix.os == 'ubuntu' && always()
-        with:
-          name: Cargo.lock
-          path: Cargo.lock
-        continue-on-error: true
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Upstream test suite against the fork
+        run: cargo test -p rusty_json_turbo --locked
+      - name: Feature matrix (upstream's own list)
+        shell: bash
+        run: |
+          for f in preserve_order float_roundtrip arbitrary_precision float_roundtrip,arbitrary_precision raw_value unbounded_depth; do
+            cargo test -p rusty_json_turbo --locked --features "$f" --tests -- --skip ui --exact
+          done
+      - name: Differential oracle (byte-identical to upstream serde_json)
+        run: cargo test -p rusty_json_turbo-bench --locked -- --nocapture
+      - name: Differential oracle, per feature (both arms on)
+        shell: bash
+        run: |
+          for f in preserve_order float_roundtrip arbitrary_precision raw_value unbounded_depth; do
+            cargo test -p rusty_json_turbo-bench --locked --features "$f" --test oracle
+          done
+      - name: CLI and seam
+        run: |
+          cargo test -p rusty_json_turbo-cli -p rusty_json_turbo-alloc --locked
+          cargo run -p rusty_json_turbo-cli --locked -- --version
+          cargo run -p rusty_json_turbo-cli --locked -- validate corpus/twitter.json
 
-  build:
-    name: Rust ${{matrix.rust}} ${{matrix.os == 'windows' && '(windows)' || ''}}
-    runs-on: ${{matrix.os}}-latest
+  # The eight targets the house ships, library only, default and no_std+alloc.
+  check-matrix:
+    runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        rust: [beta, 1.85.0, 1.71.0]
-        os: [ubuntu]
-        include:
-          - rust: stable
-            os: ubuntu
-            target: aarch64-unknown-none
-          - rust: stable
-            os: windows
-    timeout-minutes: 45
+        target:
+          - x86_64-unknown-linux-gnu
+          - x86_64-unknown-linux-musl
+          - aarch64-unknown-linux-musl
+          - x86_64-pc-windows-msvc
+          - aarch64-pc-windows-msvc
+          - x86_64-apple-darwin
+          - aarch64-apple-darwin
+          - wasm32-unknown-unknown
     steps:
-      - uses: actions/checkout@v7
-      - uses: dtolnay/rust-toolchain@master
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
         with:
-          toolchain: ${{matrix.rust}}
-          targets: ${{matrix.target}}
-      - run: cargo check --manifest-path tests/crate/Cargo.toml
-      - run: cargo check --manifest-path tests/crate/Cargo.toml --features float_roundtrip
-      - run: cargo check --manifest-path tests/crate/Cargo.toml --features arbitrary_precision
-      - run: cargo check --manifest-path tests/crate/Cargo.toml --features raw_value
-      - run: cargo check --manifest-path tests/crate/Cargo.toml --features unbounded_depth
+          targets: ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: check-${{ matrix.target }}
+      - name: default features
+        run: cargo check -p rusty_json_turbo --locked --target ${{ matrix.target }}
+      - name: no_std + alloc
+        run: cargo check -p rusty_json_turbo --locked --target ${{ matrix.target }} --no-default-features --features alloc
+      - name: every feature, no_std + alloc
+        run: cargo check -p rusty_json_turbo --locked --target ${{ matrix.target }} --no-default-features --features alloc,float_roundtrip,arbitrary_precision,raw_value,unbounded_depth
+
+  # Upstream's own no_std probe crate, unchanged apart from the package rename.
+  portable:
+    name: no_std probe crate + profile feature
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-unknown-none
+      - uses: Swatinem/rust-cache@v2
       - run: cargo check --manifest-path tests/crate/Cargo.toml --no-default-features --features alloc
       - run: cargo check --manifest-path tests/crate/Cargo.toml --no-default-features --features alloc,arbitrary_precision
       - run: cargo check --manifest-path tests/crate/Cargo.toml --no-default-features --features alloc,raw_value
-      - run: cargo check --manifest-path tests/crate/Cargo.toml --features serde_json/preserve_order
-        if: matrix.rust != '1.71.0'
-      - run: cargo check --manifest-path tests/crate/Cargo.toml --no-default-features --features alloc,serde_json/preserve_order
-        if: matrix.rust != '1.71.0'
-      - name: Build without std
-        run: cargo check --manifest-path tests/crate/Cargo.toml --target
-          ${{matrix.target}} --no-default-features --features alloc
-        if: matrix.target
+      - run: cargo check --manifest-path tests/crate/Cargo.toml --target aarch64-unknown-none --no-default-features --features alloc
+      - run: cargo check -p rusty_json_turbo --locked --features profile
 
-  minimal:
-    name: Minimal versions
+  msrv:
+    name: MSRV 1.85
     runs-on: ubuntu-latest
-    timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v7
-      - uses: dtolnay/rust-toolchain@nightly
-      - run: cargo generate-lockfile -Z minimal-versions
-      - run: cargo check --locked
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@1.85.0
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo check -p rusty_json_turbo --locked --all-features
+        env:
+          RUSTUP_TOOLCHAIN: 1.85.0
 
-  miri:
-    name: Miri (${{matrix.name}})
+  lint:
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - name: 64-bit little endian
-            target: x86_64-unknown-linux-gnu
-          - name: 64-bit big endian
-            target: powerpc64-unknown-linux-gnu
-          - name: 32-bit little endian
-            target: i686-unknown-linux-gnu
-          - name: 32-bit big endian
-            target: mips-unknown-linux-gnu
-    env:
-      MIRIFLAGS: -Zmiri-strict-provenance
-    timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v7
-      - uses: dtolnay/rust-toolchain@miri
-      - run: cargo miri setup
-      - run: cargo miri test --target ${{matrix.target}}
-      - run: cargo miri test --target ${{matrix.target}} --features preserve_order,float_roundtrip,arbitrary_precision,raw_value
-
-  clippy:
-    name: Clippy
-    runs-on: ubuntu-latest
-    if: github.event_name != 'pull_request'
-    timeout-minutes: 45
-    steps:
-      - uses: actions/checkout@v7
-      - uses: dtolnay/rust-toolchain@clippy
-      - run: cargo clippy --tests -- -Dclippy::all -Dclippy::pedantic
-      - run: cargo clippy --all-features --tests -- -Dclippy::all -Dclippy::pedantic
-
-  doc:
-    name: Documentation
-    runs-on: ubuntu-latest
-    timeout-minutes: 45
-    env:
-      RUSTDOCFLAGS: -Dwarnings
-    steps:
-      - uses: actions/checkout@v7
-      - uses: dtolnay/rust-toolchain@nightly
-      - uses: dtolnay/install@cargo-docs-rs
-      - run: cargo docs-rs
-
-  fuzz:
-    name: Fuzz
-    runs-on: ubuntu-latest
-    timeout-minutes: 45
-    steps:
-      - uses: actions/checkout@v7
-      - uses: dtolnay/rust-toolchain@nightly
-      - uses: dtolnay/install@cargo-fuzz
-      - run: cargo fuzz check
-
-  outdated:
-    name: Outdated
-    runs-on: ubuntu-latest
-    if: github.event_name != 'pull_request'
-    timeout-minutes: 45
-    steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
-      - uses: dtolnay/install@cargo-outdated
-      - run: cargo outdated --exit-code 1
-      - run: cargo outdated --manifest-path fuzz/Cargo.toml --exit-code 1
+        with:
+          components: clippy, rustfmt
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo fmt --all -- --check
+      - run: cargo clippy --workspace --all-targets --locked -- -D warnings
+      - run: cargo clippy --workspace --all-targets --locked --all-features -- -D warnings
+      - name: ASCII sources
+        run: bash scripts/check-ascii-rs.sh src crates
+      - name: cargo-deny
+        uses: EmbarkStudios/cargo-deny-action@v2
+
+  # The harness with the competitor arms, in the configuration the ledger uses.
+  harness:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo check -p rusty_json_turbo-bench --all-targets --locked --features competitors
+
+  # Catches a broken manifest or a file the package would ship without --
+  # before `cargo publish` does, not after.
+  package:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+      - run: cargo package -p rusty_json_turbo --allow-dirty

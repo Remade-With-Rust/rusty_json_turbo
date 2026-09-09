@@ -8,7 +8,7 @@ publish = false
 path = "test.rs"
 
 [dependencies]
-serde_json = { path = "../..", default-features = false }
+serde_json = { package = "rusty_json_turbo", path = "../..", default-features = false }
 
 [features]
 default = ["std"]

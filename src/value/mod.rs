@@ -238,6 +238,10 @@ impl Display for Value {
             }
         }
 
+        // `io::Error::other` does not exist on the no_std shim (src/io/core.rs),
+        // which only has `Error::new(kind, msg)`; clippy's MSRV-gated
+        // io_other_error lint cannot see that.
+        #[allow(clippy::io_other_error)]
         fn io_error(_: fmt::Error) -> io::Error {
             // Error value does not matter because Display impl just maps it
             // back to fmt::Error.

@@ -1,14 +1,49 @@
+# rusty_json_turbo -- serde_json, forked and made fast the house way.
+#
+# LAYOUT. The upstream crate stays at the workspace ROOT (src/, tests/, build.rs,
+# fuzz/) so `git merge upstream/master` is a plain merge; the house crates live
+# under crates/. A deliberate deviation from the crates/<name> scaffold, recorded
+# in docs/plans/fast_mission.md (decision 11) and docs/UPSTREAM-CHANGES.md.
+#
+# NAME. The package is `rusty_json_turbo`; the LIBRARY keeps upstream's crate
+# name `serde_json` (the rustls-webpki precedent: package `rustls-webpki`, lib
+# `webpki`) so every `use serde_json::...` in upstream's tests and doctests and
+# in every consumer is a drop-in, and no upstream line has to move.
+#
+# VERSION. 0.x until the use-protection-please gate says 1.0.0 (a security gate,
+# not a feature gate). The upstream version this tracks is in `description`
+# and in docs/UPSTREAM-CHANGES.md.
+
 [package]
-name = "serde_json"
-version = "1.0.151"
+name = "rusty_json_turbo"
+version = "0.1.0"
+authors = [
+    "Mata Network <https://www.mata.network>",
+    "Erick Tryzelaar <erick.tryzelaar@gmail.com>",
+    "David Tolnay <dtolnay@gmail.com>",
+]
 categories = ["encoding", "parser-implementations", "no-std"]
-description = "A JSON serialization file format"
-documentation = "https://docs.rs/serde_json"
+description = "serde_json forked and made fast the house way: same API, same bytes, faster. Tracks serde_json 1.0.151."
+documentation = "https://docs.rs/rusty_json_turbo"
 edition = "2021"
 keywords = ["json", "serde", "serialization"]
 license = "MIT OR Apache-2.0"
-repository = "https://github.com/serde-rs/json"
-rust-version = "1.71"
+repository = "https://github.com/Remade-With-Rust/rusty_json_turbo"
+homepage = "https://www.mata.network/remade-with-rust"
+rust-version = "1.85"
+exclude = [
+    "/.github",
+    "/corpus",
+    "/crates",
+    "/docs",
+    "/fuzz",
+    "/scripts",
+    "/tests/crate",
+    "/tools",
+]
+
+[lib]
+name = "serde_json"
 
 [dependencies]
 indexmap = { version = "2.2.3", optional = true }
@@ -92,3 +127,63 @@ raw_value = []
 # overflow the stack after deserialization has completed, including, but not
 # limited to, Display and Debug and Drop impls.
 unbounded_depth = []
+
+# House instruments (stage profiler, reach census, work counters). Zero-sized
+# and compiled out when off; filled in at M1 of docs/plans/fast_mission.md.
+profile = []
+
+[lints.rust]
+# Inherited from upstream: 12 `unsafe` sites (from_utf8_unchecked on validated
+# runs, the SWAR scanner's offset_from, the WTF-8 push, RawValue transmutes).
+# M2 of the mission plan moves them behind -accel or replaces them with safe
+# code, with the census in corpus/LEDGER.md. Until then this crate cannot take
+# the workspace `unsafe_code = "deny"`, and a crate-level table replaces the
+# workspace table entirely, so the other rows are repeated here.
+unsafe_code = "allow"
+unsafe_op_in_unsafe_fn = "deny"
+
+
+### WORKSPACE ################################################################
+
+[workspace]
+resolver = "2"
+members = ["crates/*"]
+# Both carry their own manifests and were never workspace members upstream.
+exclude = ["fuzz", "tests/crate"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/Remade-With-Rust/rusty_json_turbo"
+authors = ["Mata Network <https://www.mata.network>"]
+homepage = "https://www.mata.network/remade-with-rust"
+rust-version = "1.85"
+
+[workspace.dependencies]
+serde = { version = "1.0", features = ["derive"] }
+# The ORACLE. Upstream serde_json, pinned to the exact version this fork tracks,
+# linked into the harness under a rename so both arms live in one binary.
+serde_json_upstream = { package = "serde_json", version = "=1.0.151" }
+
+[workspace.lints.rust]
+unsafe_code = "deny"
+unsafe_op_in_unsafe_fn = "deny"
+missing_docs = "allow"
+
+[workspace.lints.clippy]
+undocumented_unsafe_blocks = "deny"
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+
+# The serde fork: crate names and versions unchanged, consumed as an overlay so
+# every `impl Serialize` in the ecosystem keeps working (mission plan §9.2).
+# Local development against a checkout: put a `[patch."https://github.com/
+# Remade-With-Rust/serde.git"]` table with `path = "../serde/<crate>"` rows in
+# a gitignored .cargo/config.toml, and re-lock without it before committing.
+[patch.crates-io]
+serde = { git = "https://github.com/Remade-With-Rust/serde.git", branch = "turbo" }
+serde_core = { git = "https://github.com/Remade-With-Rust/serde.git", branch = "turbo" }
+serde_derive = { git = "https://github.com/Remade-With-Rust/serde.git", branch = "turbo" }

@@ -824,7 +824,7 @@ impl<'de, R: Read<'de>> Deserializer<R> {
         let fraction_digits = -exponent as usize;
         self.scratch.clear();
         if let Some(zeros) = fraction_digits.checked_sub(significand.len() + 1) {
-            self.scratch.extend(iter::repeat(b'0').take(zeros + 1));
+            self.scratch.extend(iter::repeat_n(b'0', zeros + 1));
         }
         self.scratch.extend_from_slice(significand.as_bytes());
         let integer_end = self.scratch.len() - fraction_digits;

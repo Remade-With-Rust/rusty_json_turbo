@@ -1903,9 +1903,8 @@ fn test_json_pointer_mut() {
 
 #[test]
 fn test_stack_overflow() {
-    let brackets: String = iter::repeat('[')
-        .take(127)
-        .chain(iter::repeat(']').take(127))
+    let brackets: String = iter::repeat_n('[', 127)
+        .chain(iter::repeat_n(']', 127))
         .collect();
     let _: Value = from_str(&brackets).unwrap();
 
@@ -1916,9 +1915,8 @@ fn test_stack_overflow() {
 #[test]
 #[cfg(feature = "unbounded_depth")]
 fn test_disable_recursion_limit() {
-    let brackets: String = iter::repeat('[')
-        .take(140)
-        .chain(iter::repeat(']').take(140))
+    let brackets: String = iter::repeat_n('[', 140)
+        .chain(iter::repeat_n(']', 140))
         .collect();
 
     let mut deserializer = Deserializer::from_str(&brackets);

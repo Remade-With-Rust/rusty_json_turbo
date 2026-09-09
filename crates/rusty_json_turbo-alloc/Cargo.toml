@@ -1,0 +1,17 @@
+[package]
+name = "rusty_json_turbo-alloc"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+homepage.workspace = true
+rust-version.workspace = true
+description = "rusty_alloc seam for rusty_json_turbo deliverables -- never depend on rusty_alloc-api from feature code"
+publish = false
+
+[dependencies]
+rusty_alloc-api = { version = "=2.0.4" }
+
+[lints]
+workspace = true

@@ -1,0 +1,55 @@
+[package]
+name = "rusty_json_turbo-bench"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+homepage.workspace = true
+rust-version.workspace = true
+description = "The harness: in-process differential oracle against upstream serde_json, and the paired ABBA benchmark over JSONCORP. Never published."
+publish = false
+
+[lib]
+name = "rjt_bench"
+
+[[bin]]
+name = "rjson-bench"
+path = "src/main.rs"
+
+[dependencies]
+# Ours, under the name `turbo` so the two arms read unambiguously in code.
+turbo = { package = "rusty_json_turbo", path = "../.." }
+# The oracle: upstream serde_json at the exact version this fork tracks.
+serde_json_upstream = { workspace = true }
+# Optional only so the fixture files (verbatim from json-benchmark) can keep
+# their `#[cfg(feature = "serde")]` gates; it is on by default and required.
+serde = { workspace = true, optional = true }
+simd-json = { version = "0.18", optional = true }
+sonic-rs = { version = "0.5", optional = true }
+
+[features]
+default = ["serde"]
+serde = ["dep:serde"]
+# The competitor arms. Never on in a shipped artifact; this crate ships nothing.
+competitors = ["dep:simd-json", "dep:sonic-rs"]
+# Feature forwarding so the oracle runs with BOTH arms on the same feature.
+preserve_order = ["turbo/preserve_order", "serde_json_upstream/preserve_order"]
+float_roundtrip = ["turbo/float_roundtrip", "serde_json_upstream/float_roundtrip"]
+arbitrary_precision = ["turbo/arbitrary_precision", "serde_json_upstream/arbitrary_precision"]
+raw_value = ["turbo/raw_value", "serde_json_upstream/raw_value"]
+unbounded_depth = ["turbo/unbounded_depth", "serde_json_upstream/unbounded_depth"]
+
+# A crate-level table replaces the workspace table entirely, so the workspace
+# rows are repeated here. The extra row: the fixture files are verbatim from
+# json-benchmark and carry that crate's `lib-rustc-serialize` cfg on impls this
+# crate never builds; check-cfg is told the name so `-D warnings` stays honest
+# without a fake feature that `--all-features` would switch on.
+[lints.rust]
+unsafe_code = "deny"
+unsafe_op_in_unsafe_fn = "deny"
+missing_docs = "allow"
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(feature, values("lib-rustc-serialize"))'] }
+
+[lints.clippy]
+undocumented_unsafe_blocks = "deny"

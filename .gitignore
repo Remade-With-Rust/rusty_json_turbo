@@ -1,2 +1,6 @@
 /target/
-/Cargo.lock
+# Local-only cargo config (path patches to a serde checkout). Never committed:
+# a [patch] the CI runner cannot resolve breaks every build there.
+/.cargo/config.toml
+# Scratch output from tools/pinbench.ps1 and rjson-bench runs.
+/corpus/runs/
