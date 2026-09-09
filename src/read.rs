@@ -563,6 +563,165 @@ impl<'a> SliceRead<'a> {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Whitespace scanning.
+//
+// Insignificant JSON whitespace is exactly ` `, `\n`, `\t`, `\r`. Every other
+// byte <= 0x20 is invalid where whitespace is allowed and must be RETURNED, not
+// skipped, so the parser reports it at the right line and column. That rules
+// out the tempting `b <= 0x20` test and any range test over 0x09..=0x0D, which
+// would silently accept the vertical tab and form feed.
+//
+// Why a wide scan is worth it here, measured rather than assumed: on
+// `citm_catalog.json` **98.0% of whitespace bytes live in runs of 8 or more**,
+// and 92.3% in runs of 17 to 32 -- deep indentation, one run per line. On
+// `twitter.json` it is 92.6% in runs of 8 or more. A per-byte loop walks all of
+// it one compare at a time. (The run *mean* alone would have said the opposite;
+// the distribution is what decides, and the two differ because most calls to
+// `skip_whitespace` find no whitespace at all.)
+// ---------------------------------------------------------------------------
+
+const WS_ONES: u64 = 0x0101_0101_0101_0101;
+const WS_HIGHS: u64 = 0x8080_8080_8080_8080;
+
+#[inline(always)]
+fn is_ws(b: u8) -> bool {
+    matches!(b, b' ' | b'\n' | b'\t' | b'\r')
+}
+
+/// High bit set in each byte of `x` that is zero, and clear in every other.
+///
+/// Exact per byte, unlike the classic `(x - ONES) & !x & HIGHS`, whose
+/// subtraction borrows across byte boundaries and reports a byte as zero
+/// because its neighbour was. Here the addition is `low7 + 0x7F <= 0xFE`, which
+/// cannot carry out of its own byte, so no byte can be contaminated.
+#[inline(always)]
+fn zero_bytes(x: u64) -> u64 {
+    // `low7 + 0x7F` sets bit 7 iff low7 != 0; OR the original bit 7 back in, so
+    // the high bit marks a NON-zero byte. Invert for the zero bytes.
+    !(((x & !WS_HIGHS).wrapping_add(!WS_HIGHS)) | x) & WS_HIGHS
+}
+
+/// High bit set in each byte of `x` equal to `c`.
+#[inline(always)]
+fn eq_bytes(x: u64, c: u8) -> u64 {
+    zero_bytes(x ^ (c as u64).wrapping_mul(WS_ONES))
+}
+
+/// High bit set in each byte of `x` that is NOT insignificant whitespace.
+#[inline(always)]
+fn non_ws_bytes(x: u64) -> u64 {
+    let ws = eq_bytes(x, b' ') | eq_bytes(x, b'\n') | eq_bytes(x, b'\t') | eq_bytes(x, b'\r');
+    !ws & WS_HIGHS
+}
+
+// Both scanners return the byte they stopped on as well as its index.
+//
+// Returning only the index looked tidier and cost a measured 4% on
+// `canada.json`: the caller had to load that byte a second time, on every one
+// of the 557,593 calls a whitespace-free document makes. The file that CANNOT
+// benefit from a whitespace change is the one that exposed it -- which is the
+// whole reason to keep such a file in the corpus and to require that it reads
+// exactly the old number.
+
+/// The oracle: the first byte at or after `from` that is not insignificant
+/// whitespace, with its index. One byte at a time.
+///
+/// Stays in the tree forever. It is what the wide scan is gated against, and
+/// what runs when the knob turns the wide path off.
+#[inline]
+fn scan_ws_scalar(slice: &[u8], from: usize) -> (usize, Option<u8>) {
+    let mut i = from;
+    while i < slice.len() {
+        let b = slice[i];
+        if !is_ws(b) {
+            return (i, Some(b));
+        }
+        i += 1;
+    }
+    (i, None)
+}
+
+/// How many bytes to walk one at a time before reaching for a wide step.
+///
+/// Not a guess. The run-length census says **46% of `twitter.json`'s whitespace
+/// runs are a single byte** (13,345 of 28,826) and 34% of `citm_catalog`'s are.
+/// Paying an eight-byte load and a SWAR test to discover that costs far more
+/// than the two compares it replaces, and measured **0.903x on twitter scan,
+/// 20/21** -- a real regression on a file with plenty of whitespace. Peeling a
+/// few bytes first means a short run never reaches the wide path, while a long
+/// one pays four extra compares out of seventeen or more.
+const WS_PEEL: usize = 4;
+
+/// Skip a whitespace run that is already known to have started, and return the
+/// byte that ended it.
+///
+/// Deliberately NOT `inline(always)`: it runs only when there is whitespace to
+/// skip, so inlining it into every call site would bloat the hot path that
+/// mostly finds no whitespace at all.
+#[inline]
+fn scan_ws_run(slice: &[u8], from: usize) -> (usize, Option<u8>) {
+    #[cfg(feature = "knobs")]
+    if !ws_wide() {
+        return scan_ws_scalar(slice, from);
+    }
+
+    let mut i = from;
+    // Peel a short run without touching the wide path (see `WS_PEEL`).
+    let peel = (from + WS_PEEL).min(slice.len());
+    while i < peel {
+        let b = slice[i];
+        if !is_ws(b) {
+            return (i, Some(b));
+        }
+        i += 1;
+    }
+
+    // Written so there is no panicking branch at all: no indexing, no unwrap,
+    // no unreachable. Both fallible steps are provably infallible here and fold
+    // away, and if either ever were not, the scalar tail below finishes the job
+    // correctly rather than aborting.
+    while let Some(window) = slice.get(i..i + 8) {
+        let Ok(bytes) = <[u8; 8]>::try_from(window) else {
+            break;
+        };
+        let chunk = u64::from_le_bytes(bytes);
+        let m = non_ws_bytes(chunk);
+        if m != 0 {
+            // Little-endian: byte 0 is the lowest address, so the first set
+            // high bit marks the first non-whitespace byte. Take the byte out
+            // of the word already in hand rather than loading it again.
+            let k = (m.trailing_zeros() >> 3) as usize;
+            return (i + k, Some((chunk >> (k * 8)) as u8));
+        }
+        i += 8;
+    }
+    scan_ws_scalar(slice, i)
+}
+
+/// Is the wide whitespace scan on? `knobs` builds only.
+#[cfg(feature = "knobs")]
+fn ws_wide() -> bool {
+    static V: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *V.get_or_init(|| std::env::var("RJT_WS_WIDE").map_or(true, |v| v != "0"))
+}
+
+/// The first non-whitespace byte at or after `from`, with its index.
+///
+/// `inline(always)`, and tiny on purpose. The overwhelmingly common case is
+/// that there is no whitespace to skip at all -- `canada.json` takes it on
+/// essentially all of its 557,593 calls, `citm_catalog` on 92,950 of 169,287 --
+/// and that case must cost exactly what the original `peek()` cost: one load,
+/// one test. Everything else is behind a call.
+#[inline(always)]
+fn scan_ws(slice: &[u8], from: usize) -> (usize, Option<u8>) {
+    match slice.get(from) {
+        Some(&b) if !is_ws(b) => (from, Some(b)),
+        None => (from, None),
+        _ => scan_ws_run(slice, from),
+    }
+}
+
 /// Is the whitespace fast path on? `knobs` builds only; cached, so the
 /// environment is read once per process rather than once per whitespace run.
 ///
@@ -627,28 +786,19 @@ impl<'a> Read<'a> for SliceRead<'a> {
             }
         }
 
-        // One walk of the slice with the index in a register, instead of a
-        // `Result<Option<u8>>` round trip per byte through peek()/discard().
-        // Byte-for-byte the same decision as the default loop: exactly the
-        // four insignificant whitespace bytes are skipped, and the first byte
-        // that is not one of them is returned WITHOUT being consumed.
+        // One walk of the slice, eight bytes at a time where the run is long
+        // enough, instead of a `Result<Option<u8>>` round trip per byte through
+        // peek()/discard(). Byte-for-byte the same decision as the default
+        // loop: exactly the four insignificant whitespace bytes are skipped,
+        // and the first byte that is not one of them is returned WITHOUT being
+        // consumed.
         let slice = self.slice;
         let start = self.index;
-        let mut i = start;
-        while i < slice.len() {
-            let ch = slice[i];
-            if !matches!(ch, b' ' | b'\n' | b'\t' | b'\r') {
-                self.index = i;
-                crate::counters::add(&crate::counters::WS_RUNS, 1);
-                crate::counters::add(&crate::counters::WS_BYTES, (i - start) as u64);
-                return Ok(Some(ch));
-            }
-            i += 1;
-        }
+        let (i, next) = scan_ws(slice, start);
         self.index = i;
         crate::counters::add(&crate::counters::WS_RUNS, 1);
         crate::counters::add(&crate::counters::WS_BYTES, (i - start) as u64);
-        Ok(None)
+        Ok(next)
     }
 
     fn position(&self) -> Position {
@@ -1171,5 +1321,114 @@ fn decode_four_hex_digits(a: u8, b: u8, c: u8, d: u8) -> Option<u16> {
         Some(codepoint as u16)
     } else {
         None
+    }
+}
+
+#[cfg(test)]
+mod ws_tests {
+    use super::{is_ws, scan_ws, scan_ws_scalar};
+
+    /// Index only, for the comparisons below.
+    fn wide(s: &[u8], from: usize) -> usize {
+        scan_ws(s, from).0
+    }
+    fn scalar(s: &[u8], from: usize) -> usize {
+        scan_ws_scalar(s, from).0
+    }
+
+    /// The byte each scanner reports must be the byte at the index it reports.
+    /// Returning a stale or re-loaded byte here would be invisible to an
+    /// index-only comparison and would corrupt every token boundary.
+    fn agree(s: &[u8], from: usize) {
+        let (wi, wb) = scan_ws(s, from);
+        let (si, sb) = scan_ws_scalar(s, from);
+        assert_eq!(wi, si, "index disagreement at {from} in {s:?}");
+        assert_eq!(wb, sb, "byte disagreement at {from} in {s:?}");
+        assert_eq!(wb, s.get(wi).copied(), "byte is not the one at the index");
+    }
+    use alloc::vec;
+    use alloc::vec::Vec;
+
+    /// The gate the house requires of any wide kernel: it must agree with its
+    /// scalar twin on every byte value at every offset, not merely on a corpus.
+    #[test]
+    fn wide_matches_scalar_for_every_byte_at_every_offset() {
+        // A window long enough that the wide loop runs at least twice, so a
+        // byte can be placed before, inside and after the first chunk.
+        for pos in 0..24usize {
+            for b in 0..=255u8 {
+                let mut buf = [b' '; 24];
+                buf[pos] = b;
+                for from in 0..24usize {
+                    let want = scalar(&buf, from);
+                    let got = wide(&buf, from);
+                    assert_eq!(
+                        got, want,
+                        "byte {b:#04x} at {pos}, scanning from {from}: wide said {got}, scalar {want}"
+                    );
+                    // ... and the byte reported must be the byte at that index.
+                    agree(&buf, from);
+                }
+            }
+        }
+    }
+
+    /// Every length from empty to past two chunks, all-whitespace and none.
+    #[test]
+    fn wide_matches_scalar_at_every_length() {
+        for len in 0..40usize {
+            for fill in [b' ', b'\t', b'\n', b'\r', b'x', 0x0b, 0x0c, 0x00] {
+                let buf = vec![fill; len];
+                for from in 0..=len {
+                    assert_eq!(
+                        wide(&buf, from),
+                        scalar(&buf, from),
+                        "fill {fill:#04x}, len {len}, from {from}"
+                    );
+                    agree(&buf, from);
+                }
+            }
+        }
+    }
+
+    /// Mixed content, including the bytes a range test would wrongly skip.
+    #[test]
+    fn wide_matches_scalar_on_mixed_content() {
+        let mut seed = 0x1234_5678_9abc_def0u64;
+        let alphabet = [
+            b' ', b' ', b' ', b'\t', b'\n', b'\r', // whitespace, over-represented
+            0x0b, 0x0c, 0x00, 0x1f, // NOT whitespace, and <= 0x20: the trap
+            b'{', b'}', b'"', b'1', b'a', 0xff,
+        ];
+        for _ in 0..2000 {
+            let mut buf = Vec::new();
+            for _ in 0..64 {
+                seed = seed
+                    .wrapping_mul(6364136223846793005)
+                    .wrapping_add(1442695040888963407);
+                buf.push(alphabet[(seed >> 33) as usize % alphabet.len()]);
+            }
+            for from in 0..buf.len() {
+                assert_eq!(
+                    wide(&buf, from),
+                    scalar(&buf, from),
+                    "buf {buf:?} from {from}"
+                );
+                agree(&buf, from);
+            }
+        }
+    }
+
+    /// The control chars a `b <= 0x20` or `0x09..=0x0d` test would wrongly
+    /// treat as whitespace. Skipping them would silently accept invalid JSON.
+    #[test]
+    fn vertical_tab_and_form_feed_are_not_whitespace() {
+        for b in [0x0b_u8, 0x0c, 0x00, 0x01, 0x1f, 0x21] {
+            assert!(!is_ws(b), "{b:#04x} must not be skippable whitespace");
+            let mut buf = [b' '; 16];
+            buf[10] = b;
+            assert_eq!(wide(&buf, 0), 10);
+            assert_eq!(scalar(&buf, 0), 10);
+        }
     }
 }

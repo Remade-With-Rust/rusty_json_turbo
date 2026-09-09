@@ -132,7 +132,8 @@ of having instruments first.
 | Upgrade | Targets | Mechanism | Status |
 |---|---|---|:--:|
 | **Whitespace off the per-byte path** | every token boundary | skip a whitespace run in one walk of the slice instead of a `Result<Option<u8>>` round trip per byte | ✅ **landed** — see below |
-| Wide whitespace scan | pretty-printed input | 8-byte SWAR, then an SSE2/AVX2 twin with the scalar loop kept as the oracle | **priced by the brick above**: four fifths of the whitespace cost is still on the table |
+| **Wide whitespace scan** | pretty-printed input | eight bytes per step (SWAR), with a short-run peel and the scalar walk kept as the oracle | ✅ **landed** — see below |
+| SIMD whitespace scan | pretty-printed input | an SSE2/AVX2 twin of the above, if the measurement justifies an `unsafe` island | not started |
 | Bulk `Value` map build | DOM parse | build the map from a sorted vector instead of inserting per entry; reserve on sequences | **promoted** — measured allocation-bound, ~1 alloc per 31 input bytes |
 | Arena `Value` (additional type) | DOM parse | bump-allocated nodes, flat objects, interned keys — the shape that gives the fastest competitor its 1.5–3.6x DOM lead | planned, v1.x |
 | SIMD string scan | string-heavy input | 16/32-byte twin of the existing 8-byte SWAR quote/backslash/control scan | planned |
@@ -144,33 +145,44 @@ of having instruments first.
 | Sink specialisation | stringify | fold separators into adjacent writes; write integers and floats into spare capacity | *repriced* — cannot win by removing allocations (there are none); must win on write-call count |
 | Correctly-rounded float parse | float-heavy input | core's Eisel-Lemire, replacing the vendored bignum path | planned, v1.x, opt-in (it changes output) |
 
-##### Landed: whitespace off the per-byte path
+##### Landed: the whitespace path
 
 `citm_catalog.json` is **71.9% whitespace**, and skipping it was **36% of the
-time to parse that file into a `Value`** — measured, not guessed, by running
-the same document with the skippable whitespace removed. It was going through
-`peek()`/`discard()` one byte at a time. Now a reader over a contiguous buffer
-walks the run once.
+time to parse that file into a `Value`** — measured, not guessed, by running the
+same document with the skippable whitespace removed. It went through
+`peek()`/`discard()` one byte at a time. It now walks the run in one pass, eight
+bytes per step where the run is long enough to pay for it.
 
-| | peek calls before | after | removed |
-|---|---:|---:|---:|
-| citm_catalog, DOM parse | 1,587,979 | 141,319 | **−91.1%** |
-| twitter, DOM parse | 250,193 | 11,958 | **−95.2%** |
-| canada, DOM parse | 2,751,947 | 2,194,321 | **−20.3%** |
+Measured in one binary with one environment variable between the arms, so the
+two arms cannot differ by code layout. 21 pairs, pinned, ABBA, on a quiet
+machine. `> 1` means the new path is faster; the session's null-arm floor was
+0.983x–1.021x.
 
-<sub>Counting the work removed is the primary evidence, because it is exact,
-needs one run, and does not care how busy the machine is. It reconciles to the
-byte on all three files: *peeks removed = whitespace runs + whitespace bytes*.
-That exactness turned up something the byte census had not — the saving is one
-`peek` per whitespace **check**, not per whitespace byte, so `canada.json` loses
-557,626 peek calls despite containing 33 whitespace bytes in 2.25 MB. Minified
-documents benefit too. On the clock, in a same-binary A/B (one env var between
-the arms, so the two arms cannot differ by code layout): `citm_catalog` scan
-**1.168x** in 15 of 15 paired runs, struct parse 1.057x, `twitter` scan 1.055x —
-while the four stringify cells, which never reach this code, did not move. DOM
-parse is under-resolved rather than refuted: the machine was throttled to
-roughly 60% of its M0 speed all session, which the ledger records. Byte-identical
-throughout: upstream's suite, the oracle, and a 300,000-case differential soak.</sub>
+| file | workload | before | after | ratio |
+|---|---|---:|---:|---:|
+| citm_catalog | scan | 1,565 MB/s | **2,105 MB/s** | **1.345x** |
+| citm_catalog | struct parse | 1,171 MB/s | **1,461 MB/s** | **1.246x** |
+| citm_catalog | DOM parse | 664 MB/s | **722 MB/s** | **1.095x** |
+| canada | scan | 1,006 MB/s | **1,062 MB/s** | **1.053x** |
+| twitter | scan | 1,472 MB/s | **1,524 MB/s** | **1.042x** |
+| twitter | struct parse | 791 MB/s | **813 MB/s** | **1.036x** |
+| any file | stringify | — | — | 0.997x–1.008x (control, unmoved) |
+
+<sub>Every row above 1.04x won 21 of 21 paired runs. **`canada.json`'s 1.053x is
+not a whitespace result** — that file has 33 whitespace bytes in 2.25 MB. It is
+the entry point now costing one load and one test where it used to build a
+`Result<Option<u8>>`, so minified documents gain too, which is where most JSON
+on a wire lives. The four stringify cells never reach this code and did not
+move, which is what makes the rest believable.</sub>
+
+<sub>**Two regressions were found and fixed on the way, both by files that
+cannot benefit.** Returning only an index made the caller re-load the byte it
+had just examined and cost 4% on `canada`; and reaching for an eight-byte step
+on a *one-byte* run — 46% of `twitter`'s whitespace runs — cost 10% on twitter
+scan. Neither was visible in the output: both arms stayed byte-identical
+throughout. Keeping a file in the corpus that a change must *not* help is what
+caught them. Full history, counts and method line:
+[`corpus/LEDGER.md`](corpus/LEDGER.md).</sub>
 
 ## What is this?
 

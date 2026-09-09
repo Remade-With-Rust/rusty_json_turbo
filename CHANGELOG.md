@@ -46,6 +46,16 @@ carry their measured numbers and method line, never an adjective.
   and **deterministic work counters** (`rjson-bench work`, library feature
   `profile`) with an `RJT_*` A/B knob (feature `knobs`) so two implementations
   can be compared inside one binary rather than across two code layouts.
+- **Brick B1s**: the whitespace scan now takes eight bytes per step (SWAR, exact
+  zero-byte test), with a four-byte scalar peel so a short run never reaches the
+  wide path and an `inline(always)` entry so "no whitespace here" stays one load
+  and one test. Byte-identical. Against upstream's original loop, measured in one
+  binary with one env var between the arms, 21 pairs on a quiet machine:
+  `citm_catalog` scan **1.345x**, struct parse **1.246x**, DOM parse **1.095x**;
+  `canada` scan 1.053x; `twitter` scan 1.042x, struct parse 1.036x — each 21/21 —
+  with the four stringify control cells unmoved (0.997x–1.008x). Two regressions
+  were caught during development by the corpus files the change cannot help, and
+  fixed; see `corpus/LEDGER.md`.
 - **Brick B1** (first performance change to the JSON code): whitespace skipping
   moved off the per-byte `peek()`/`discard()` path into one walk of the slice,
   via a new sealed-trait method `Read::skip_whitespace` whose default body is

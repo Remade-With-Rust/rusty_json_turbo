@@ -505,6 +505,38 @@ fn probe(args: &[String]) -> ExitCode {
         );
     }
 
+    // The distribution that decides a wide whitespace scan. A step of N bytes
+    // can only accelerate bytes living in runs of at least N; every shorter run
+    // pays the wide path's setup for nothing. The mean cannot tell these apart.
+    println!("\nwhitespace RUNS by length (runs / bytes):");
+    print!("{:<14}", "file");
+    for b in content::WS_BUCKETS {
+        print!(" {b:>15}");
+    }
+    println!(" {:>9} {:>9}", "mean", "longest");
+    for (f, c) in &censuses {
+        print!("{:<14}", f.name());
+        for i in 0..content::WS_BUCKETS.len() {
+            print!(" {:>7}/{:<7}", c.ws_runs_by_len[i], c.ws_bytes_by_len[i]);
+        }
+        println!(" {:>9.2} {:>9}", c.mean_ws_run(), c.longest_ws_run);
+    }
+    println!("\nshare of whitespace BYTES in runs of at least N (the wide-scan bound):");
+    println!(
+        "{:<14} {:>10} {:>10} {:>10} {:>10}",
+        "file", ">=4", ">=8", ">=16", ">=32"
+    );
+    for (f, c) in &censuses {
+        println!(
+            "{:<14} {:>9.1}% {:>9.1}% {:>9.1}% {:>9.1}%",
+            f.name(),
+            c.ws_bytes_in_runs_of_at_least(4),
+            c.ws_bytes_in_runs_of_at_least(8),
+            c.ws_bytes_in_runs_of_at_least(16),
+            c.ws_bytes_in_runs_of_at_least(32)
+        );
+    }
+
     println!("\n== ceiling probe: what is left when nothing is built\n");
     println!(
         "arm=ours allocator={} rounds={} window={} ms  (cell order ROTATED each round, \

@@ -37,6 +37,37 @@ pub struct Content {
     pub floats: usize,
     /// The longest string literal, in bytes.
     pub longest_string: usize,
+
+    /// Maximal runs of skippable whitespace, bucketed by length:
+    /// `[1, 2, 3, 4, 5..=8, 9..=16, 17..=32, 33..=64, 65+]`.
+    ///
+    /// The mean is not enough to decide a wide scan. A step of N bytes can only
+    /// help bytes that live in runs of at least N, and a distribution with the
+    /// same mean can put all of its bytes above that line or all of it below.
+    /// This is the count that decides whether the brick is worth building.
+    pub ws_runs_by_len: [usize; 9],
+    /// Whitespace bytes, bucketed the same way.
+    pub ws_bytes_by_len: [usize; 9],
+    /// The longest run of skippable whitespace.
+    pub longest_ws_run: usize,
+}
+
+/// Bucket index for a run of `n` bytes, matching [`Content::ws_runs_by_len`].
+pub const WS_BUCKETS: [&str; 9] = ["1", "2", "3", "4", "5-8", "9-16", "17-32", "33-64", "65+"];
+
+fn ws_bucket(n: usize) -> usize {
+    match n {
+        0 => usize::MAX, // not a run
+        1 => 0,
+        2 => 1,
+        3 => 2,
+        4 => 3,
+        5..=8 => 4,
+        9..=16 => 5,
+        17..=32 => 6,
+        33..=64 => 7,
+        _ => 8,
+    }
 }
 
 impl Content {
@@ -73,6 +104,41 @@ impl Content {
             self.string_bytes as f64 / self.strings as f64
         }
     }
+
+    /// Total runs of skippable whitespace.
+    pub fn ws_run_count(&self) -> usize {
+        self.ws_runs_by_len.iter().sum()
+    }
+
+    pub fn mean_ws_run(&self) -> f64 {
+        let n = self.ws_run_count();
+        if n == 0 {
+            0.0
+        } else {
+            self.whitespace as f64 / n as f64
+        }
+    }
+
+    /// The share of whitespace BYTES living in runs of at least `n`.
+    ///
+    /// This is the number a wide scan is bounded by: a step of `n` bytes can
+    /// only ever accelerate bytes in runs at least that long, and every shorter
+    /// run pays the wide path's setup for nothing.
+    pub fn ws_bytes_in_runs_of_at_least(&self, n: usize) -> f64 {
+        let first = match n {
+            0 | 1 => 0,
+            2 => 1,
+            3 => 2,
+            4 => 3,
+            5..=8 => 4,
+            9..=16 => 5,
+            17..=32 => 6,
+            33..=64 => 7,
+            _ => 8,
+        };
+        let part: usize = self.ws_bytes_by_len[first..].iter().sum();
+        Self::pct(part, self.whitespace)
+    }
 }
 
 /// Classify every byte of a document.
@@ -88,8 +154,17 @@ pub fn census(input: &[u8]) -> Content {
         let b = input[i];
         match b {
             b' ' | b'\t' | b'\n' | b'\r' => {
-                c.whitespace += 1;
-                i += 1;
+                // Walk the whole run so it can be bucketed by length.
+                let start = i;
+                while i < input.len() && matches!(input[i], b' ' | b'\t' | b'\n' | b'\r') {
+                    i += 1;
+                }
+                let n = i - start;
+                c.whitespace += n;
+                c.longest_ws_run = c.longest_ws_run.max(n);
+                let b = ws_bucket(n);
+                c.ws_runs_by_len[b] += 1;
+                c.ws_bytes_by_len[b] += n;
             }
             b'{' | b'}' | b'[' | b']' | b',' | b':' => {
                 c.structural += 1;

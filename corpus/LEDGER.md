@@ -490,6 +490,94 @@ whitespace cost.** The other four fifths are still there, and that is the
 measured, precise target for a wide (SWAR or SIMD) scan, which is the next
 brick rather than a guess.
 
+---
+
+### 2026-09-09 -- M2-B1s: the wide whitespace scan (KEPT), and two regressions it taught
+
+#### The count that decided it, and the count that nearly misled
+
+The obvious number is the mean whitespace run: `citm_catalog` has 1,277,373
+whitespace bytes over 169,287 calls to the skipper, which reads as 7.5 bytes and
+says an eight-byte step is a wash. **That number is a units error.** Those 169,287
+are *calls*, and most of them find no whitespace at all. The maximal runs are
+what a wide step acts on, and there are only 76,337 of them:
+
+| file | 1 | 2 | 3 | 4 | 5-8 | 9-16 | 17-32 | mean | longest |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| twitter | 13,345 | 1 | 0 | 4 | 2,970 | **12,118** | 388 | 6.25 | 22 |
+| citm_catalog | 25,869 | 1 | 0 | 0 | 20 | 5,490 | **44,957** | 16.73 | 30 |
+| canada | 9 | 7 | 0 | 1 | 1 | 0 | 0 | 1.83 | 6 |
+
+Share of whitespace **bytes** in runs of at least 8: twitter **92.6%**,
+citm_catalog **98.0%**, canada 18.2% (of 33 bytes). That is what justified the
+brick -- and the same table's first column is what predicted the regression
+below, had it been read closely enough the first time.
+
+#### The brick
+
+Eight bytes per step: four SWAR byte-equality tests (`0x20`, `\n`, `\t`, `\r`)
+OR'd into a mask, then `trailing_zeros() >> 3` for the first non-whitespace
+byte, taken out of the word already in hand rather than re-loaded. The scalar
+walk stays as the oracle and as the arm the `RJT_WS_WIDE=0` knob selects.
+
+**The zero-byte test is the exact one, not the famous one.** The classic
+`(x - ONES) & !x & HIGHS` borrows across byte boundaries and reports a byte as
+zero because its *neighbour* was. Here `(low7 + 0x7F) | x` cannot carry out of
+its own byte. The twin test was poisoned with the classic form to prove it
+discriminates: three of four tests failed, at `byte 0x21 at 1, scanning from 0:
+wide said 24, scalar 1` -- exactly the borrow bug, which would otherwise have
+shipped as "skip a byte that is not whitespace".
+
+Gates: every byte value 0x00-0xFF at every offset 0-23 against the scalar twin,
+every length 0-40, 2,000 random mixed buffers, and an explicit case for `0x0b`
+and `0x0c` -- the vertical tab and form feed that a `b <= 0x20` or `0x09..=0x0d`
+range test would wrongly skip. Plus the oracle, upstream's suite and the soak.
+
+#### Two regressions, both found by files that cannot benefit
+
+The corpus was chosen so that each brick has a file it must *not* help. Both
+times, that file is what caught the defect.
+
+1. **`canada.json` read 0.961x at 15/15** (z = 3.87) -- a 4% regression on a
+   document with 33 whitespace bytes in 2.25 MB. Cause: the scanner returned
+   only an index, so the caller re-loaded the byte it had just examined, on
+   every one of 557,593 calls. Fix: return the byte with the index.
+2. **`twitter.json` scan read 0.903x at 20/21** (z = 4.15) -- a 10% regression
+   on a file that is 27.8% whitespace. Cause: **46% of twitter's whitespace runs
+   are a single byte**, and an eight-byte load plus a SWAR test is far more
+   expensive than the two compares it replaced. Fix: peel `WS_PEEL = 4` bytes
+   scalar before reaching for the wide path, so a short run never touches it;
+   and make the entry point `inline(always)` and tiny, so the common
+   "no whitespace here at all" case costs one load and one test, as the original
+   `peek()` did, with the run-skipping behind a call.
+
+Neither was visible in output: both arms were byte-identical throughout.
+
+#### Final measurement (quiet box, load 2%, 21 pairs, same binary, one env var)
+
+`> 1` means the brick is faster. Null-arm floor this session: 0.983x-1.021x.
+
+| file | column | original | brick | ratio | brick won |
+|---|---|---:|---:|---:|---:|
+| citm_catalog | scan | 1,565 MB/s | **2,105 MB/s** | **1.345x** | 21/21, z = 4.58 |
+| citm_catalog | struct-parse | 1,171 MB/s | **1,461 MB/s** | **1.246x** | 21/21, z = 4.58 |
+| citm_catalog | dom-parse | 664 MB/s | **722 MB/s** | **1.095x** | 21/21, z = 4.58 |
+| canada | scan | 1,006 MB/s | **1,062 MB/s** | **1.053x** | 21/21, z = 4.58 |
+| twitter | scan | 1,472 MB/s | **1,524 MB/s** | **1.042x** | 21/21, z = 4.58 |
+| twitter | struct-parse | 791 MB/s | **813 MB/s** | **1.036x** | 18/21, z = 3.27 |
+| twitter | dom-parse | 359 MB/s | 366 MB/s | 1.023x | 14/21, z = 1.53 |
+| canada | struct-parse / dom-parse | 631 / 329 | 634 / 327 | 1.001x / 0.992x | at the floor |
+| **stringify x4 (control)** | | | | **0.997x-1.008x** | **unmoved** |
+
+`canada`'s 1.053x on scan is not a whitespace result -- the file has almost
+none. It is the inlined entry point being cheaper than the original `peek()`,
+which built a `Result<Option<u8>>` per call. So the restructure pays on
+minified documents too, which is where most JSON on a wire actually lives.
+
+**These figures are the whole whitespace campaign** (B1 + B1s against upstream's
+original loop), measured in one binary with one environment variable between the
+arms, so the two arms cannot differ by code layout.
+
 #### M1 instruments landed alongside it
 
 - **Allocation census** (`rjson-bench census`, `--features profile`): the table

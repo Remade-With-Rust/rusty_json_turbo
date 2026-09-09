@@ -1,0 +1,26 @@
+﻿pinvs: original=target/b-knobs/release/rjson-bench.exe (96A15FD1D2D53127)
+pinvs: brick=target/b-knobs/release/rjson-bench.exe (96A15FD1D2D53127)
+pinvs: NULL ARM -- identical binaries, this is the floor
+pinvs: cpu=2 priority=High pairs=21 bench='solo --all --cell twitter,scan --cell citm_catalog,scan --cell canada,scan --arm ours'
+
+| file | column | original | brick | original/brick time (median [min, max]) | wins, z |
+|---|---|---:|---:|---:|---:|
+| canada | dom-parse | original **329 MB/s** | brick 327 MB/s | **0.992x** [0.938, 1.074] | 12/21, z = +0.65 |
+| canada | dom-stringify | original **1,010 MB/s** | brick 1,006 MB/s | **1.001x** [0.973, 1.122] | 10/21, z = -0.22 |
+| canada | scan | original **1,006 MB/s** | brick 1,062 MB/s | **1.053x** [1.023, 1.156] | 0/21, z = -4.58 |
+| canada | struct-parse | original **631 MB/s** | brick 634 MB/s | **1.001x** [0.965, 1.431] | 9/21, z = -0.65 |
+| canada | struct-stringify | original **725 MB/s** | brick 717 MB/s | **0.997x** [0.961, 1.141] | 11/21, z = +0.22 |
+| citm_catalog | dom-parse | original **664 MB/s** | brick 722 MB/s | **1.095x** [1.022, 1.176] | 0/21, z = -4.58 |
+| citm_catalog | dom-stringify | original **1,161 MB/s** | brick 1,163 MB/s | **0.998x** [0.968, 1.054] | 12/21, z = +0.65 |
+| citm_catalog | scan | original **1,565 MB/s** | brick 2,105 MB/s | **1.345x** [1.295, 1.452] | 0/21, z = -4.58 |
+| citm_catalog | struct-parse | original **1,171 MB/s** | brick 1,461 MB/s | **1.246x** [1.175, 1.312] | 0/21, z = -4.58 |
+| citm_catalog | struct-stringify | original **2,079 MB/s** | brick 2,072 MB/s | **1.008x** [0.919, 1.162] | 9/21, z = -0.65 |
+| twitter | dom-parse | original **359 MB/s** | brick 366 MB/s | **1.023x** [0.942, 1.093] | 7/21, z = -1.53 |
+| twitter | dom-stringify | original **1,505 MB/s** | brick 1,497 MB/s | **1.001x** [0.910, 1.092] | 9/21, z = -0.65 |
+| twitter | scan | original **1,472 MB/s** | brick 1,524 MB/s | **1.042x** [1.008, 1.111] | 0/21, z = -4.58 |
+| twitter | struct-parse | original **791 MB/s** | brick 813 MB/s | **1.036x** [0.992, 1.069] | 3/21, z = -3.27 |
+| twitter | struct-stringify | original **1,620 MB/s** | brick 1,614 MB/s | **0.997x** [0.948, 1.085] | 13/21, z = +1.09 |
+
+method: PROCESS-level paired A/B between two binaries (a global allocator is one per program, so it cannot be an in-process arm); each binary reports its own per-cell time via json-bench solo so process launch is outside the number; leading binary alternated per pair (ABBA); pairs=21; statistic=min per-iteration time in each arm-sample window; verdict=median of paired ratios + paired wins with z; pinned=cpu2/High, affinity read back per run; work parity: output/input bytes asserted equal per cell per pair; machine=Intel64 Family 6 Model 183 Stepping 1, GenuineIntel
+A: BINARY|system|false|uncommitted|windows|x86_64
+B: BINARY|system|false|uncommitted|windows|x86_64

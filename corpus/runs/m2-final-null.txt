@@ -1,0 +1,26 @@
+﻿pinvs: nA=target/b-knobs/release/rjson-bench.exe (E8E1D21824246DEB)
+pinvs: nB=target/b-knobs/release/rjson-bench.exe (E8E1D21824246DEB)
+pinvs: NULL ARM -- identical binaries, this is the floor
+pinvs: cpu=2 priority=High pairs=15 bench='solo --all --cell twitter,scan --cell citm_catalog,scan --cell canada,scan --arm ours'
+
+| file | column | nA | nB | nA/nB time (median [min, max]) | wins, z |
+|---|---|---:|---:|---:|---:|
+| canada | dom-parse | nA **336 MB/s** | nB 331 MB/s | **0.991x** [0.975, 1.032] | 12/15, z = +2.32 |
+| canada | dom-stringify | nA **1,016 MB/s** | nB 1,020 MB/s | **1.004x** [0.963, 1.027] | 5/15, z = -1.29 |
+| canada | scan | nA **1,594 MB/s** | nB 1,599 MB/s | **1.005x** [0.933, 1.075] | 5/15, z = -1.29 |
+| canada | struct-parse | nA **616 MB/s** | nB 614 MB/s | **0.997x** [0.966, 1.022] | 9/15, z = +0.77 |
+| canada | struct-stringify | nA **714 MB/s** | nB 716 MB/s | **1.004x** [0.984, 1.024] | 5/15, z = -1.29 |
+| citm_catalog | dom-parse | nA **720 MB/s** | nB 718 MB/s | **1.003x** [0.970, 1.026] | 6/15, z = -0.77 |
+| citm_catalog | dom-stringify | nA **1,255 MB/s** | nB 1,267 MB/s | **1.012x** [0.958, 1.032] | 4/15, z = -1.81 |
+| citm_catalog | scan | nA **2,347 MB/s** | nB 2,343 MB/s | **1.000x** [0.959, 1.020] | 7/15, z = -0.26 |
+| citm_catalog | struct-parse | nA **1,419 MB/s** | nB 1,416 MB/s | **0.998x** [0.948, 1.052] | 8/15, z = +0.26 |
+| citm_catalog | struct-stringify | nA **1,995 MB/s** | nB 1,984 MB/s | **0.997x** [0.959, 1.023] | 8/15, z = +0.26 |
+| twitter | dom-parse | nA **374 MB/s** | nB 378 MB/s | **1.021x** [0.969, 1.056] | 6/15, z = -0.77 |
+| twitter | dom-stringify | nA **1,827 MB/s** | nB 1,808 MB/s | **0.983x** [0.937, 1.049] | 11/15, z = +1.81 |
+| twitter | scan | nA **1,665 MB/s** | nB 1,659 MB/s | **0.996x** [0.974, 1.025] | 9/15, z = +0.77 |
+| twitter | struct-parse | nA **815 MB/s** | nB 813 MB/s | **0.997x** [0.965, 1.046] | 9/15, z = +0.77 |
+| twitter | struct-stringify | nA **2,025 MB/s** | nB 2,053 MB/s | **1.017x** [0.968, 1.097] | 5/15, z = -1.29 |
+
+method: PROCESS-level paired A/B between two binaries (a global allocator is one per program, so it cannot be an in-process arm); each binary reports its own per-cell time via json-bench solo so process launch is outside the number; leading binary alternated per pair (ABBA); pairs=15; statistic=min per-iteration time in each arm-sample window; verdict=median of paired ratios + paired wins with z; pinned=cpu2/High, affinity read back per run; work parity: output/input bytes asserted equal per cell per pair; machine=Intel64 Family 6 Model 183 Stepping 1, GenuineIntel
+A: BINARY|system|false|uncommitted|windows|x86_64
+B: BINARY|system|false|uncommitted|windows|x86_64
