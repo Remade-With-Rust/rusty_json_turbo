@@ -96,9 +96,10 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: aarch64-unknown-none
       - uses: Swatinem/rust-cache@v2
+      # rust-toolchain.toml selects the pinned toolchain; a target given to the
+      # action lands on `stable`, not on it. Add it to the active toolchain.
+      - run: rustup target add aarch64-unknown-none
       - run: cargo check --manifest-path tests/crate/Cargo.toml --no-default-features --features alloc
       - run: cargo check --manifest-path tests/crate/Cargo.toml --no-default-features --features alloc,arbitrary_precision
       - run: cargo check --manifest-path tests/crate/Cargo.toml --no-default-features --features alloc,raw_value
