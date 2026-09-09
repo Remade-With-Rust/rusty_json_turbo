@@ -1,0 +1,50 @@
+== content census (deterministic; no clock involved)
+
+file                bytes      ws%  struct%  string%  number% n-ascii%   strings   numbers
+twitter            646995    27.8%    10.3%    57.1%     1.5%    14.7%     18099      2109
+citm_catalog      1777672    71.9%     8.3%    12.5%     7.1%     0.0%     26604     14392
+canada            2251060     0.0%     9.9%     0.0%    90.1%     0.0%        12    111126
+
+file            escaped%    mean-str   longest     escape-B     floats   literals-B
+twitter             1.7%        20.4       463         2456          1        21394
+citm_catalog        0.0%         8.3        55            4          0         5052
+canada              0.0%         7.5        17            0     111080            0
+
+== ceiling probe: what is left when nothing is built
+
+arm=ours allocator=rusty_alloc 2.0.4 rounds=7 window=300 ms  (cell order ROTATED each round, so no cell is always first; per-cell statistic = min over rounds of the min-per-iteration in that round's window)
+
+-- twitter (646995 bytes; 466906 with whitespace removed)
+   scan                   314400 ns     2058 MB/s
+   scan, no ws            242000 ns     1929 MB/s
+   struct-parse           605300 ns     1069 MB/s
+   dom-parse              879800 ns      735 MB/s
+   dom-parse, no ws       789000 ns      592 MB/s
+   scanning is 36% of dom-parse and 52% of struct-parse
+   CEILING, value construction free : 2.80x on dom-parse
+   CEILING, struct machinery free   : 1.93x on struct-parse
+   CEILING, whitespace skip free    : 1.30x on scan (23% of it), 1.12x on dom-parse (10% of it)
+
+-- citm_catalog (1777672 bytes; 500299 with whitespace removed)
+   scan                   878500 ns     2024 MB/s
+   scan, no ws            313000 ns     1598 MB/s
+   struct-parse          1200000 ns     1481 MB/s
+   dom-parse             1718100 ns     1035 MB/s
+   dom-parse, no ws      1103700 ns      453 MB/s
+   scanning is 51% of dom-parse and 73% of struct-parse
+   CEILING, value construction free : 1.96x on dom-parse
+   CEILING, struct machinery free   : 1.37x on struct-parse
+   CEILING, whitespace skip free    : 2.81x on scan (64% of it), 1.56x on dom-parse (36% of it)
+
+-- canada (2251060 bytes; 2251027 with whitespace removed)
+   scan                  1477500 ns     1524 MB/s
+   scan, no ws           1459200 ns     1543 MB/s
+   struct-parse          2786000 ns      808 MB/s
+   dom-parse             4184700 ns      538 MB/s
+   dom-parse, no ws      4187900 ns      538 MB/s
+   scanning is 35% of dom-parse and 53% of struct-parse
+   CEILING, value construction free : 2.83x on dom-parse
+   CEILING, struct machinery free   : 1.89x on struct-parse
+   CEILING, whitespace skip free    : 1.01x on scan (1% of it), 1.00x on dom-parse (-0% of it)
+
+Read these as shares, not as verdicts: the cells run block-wise inside one process (rotated, not paired), so a few percent of drift is expected. A ceiling is used to decide whether a brick is worth BUILDING -- and the arithmetic that matters is share x plausible speedup against the floor.

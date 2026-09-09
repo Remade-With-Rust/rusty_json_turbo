@@ -1,0 +1,28 @@
+rjson-bench: upstream vs upstream (NULL ARM: the floor) | 2 cells | 6 pairs | 250 ms windows | allocator system
+
+== citm_catalog / dom-parse (1777672 bytes)
+  pair  1 lead=upstream upstream=   7147000 ns/iter (  22 it)  upstream=   7691100 ns/iter (  23 it)  a/b=0.929
+  pair  2 lead=upstream upstream=   7734900 ns/iter (  23 it)  upstream=   7385200 ns/iter (  22 it)  a/b=1.047
+  pair  3 lead=upstream upstream=   7305300 ns/iter (  22 it)  upstream=   7864800 ns/iter (  22 it)  a/b=0.929
+  pair  4 lead=upstream upstream=   7342300 ns/iter (  23 it)  upstream=   7941700 ns/iter (  22 it)  a/b=0.925
+  pair  5 lead=upstream upstream=   7237600 ns/iter (  23 it)  upstream=   7042500 ns/iter (  23 it)  a/b=1.028
+  pair  6 lead=upstream upstream=   4882700 ns/iter (  25 it)  upstream=   6503000 ns/iter (  23 it)  a/b=0.751
+  => median a/b 0.929 [0.751, 1.047]  wins 4/6  z +0.82  upstream 243 MB/s  upstream 231 MB/s
+  null-arm floor for this cell: median 0.929, worst pair 1.249
+
+== twitter / dom-parse (646995 bytes)
+  pair  1 lead=upstream upstream=   2982500 ns/iter (  56 it)  upstream=   2895500 ns/iter (  60 it)  a/b=1.030
+  pair  2 lead=upstream upstream=   2528000 ns/iter (  62 it)  upstream=   2800000 ns/iter (  61 it)  a/b=0.903
+  pair  3 lead=upstream upstream=   1791200 ns/iter (  72 it)  upstream=   2089600 ns/iter (  69 it)  a/b=0.857
+  pair  4 lead=upstream upstream=   1624100 ns/iter (  77 it)  upstream=   1754100 ns/iter (  74 it)  a/b=0.926
+  pair  5 lead=upstream upstream=   1668300 ns/iter (  71 it)  upstream=   2120100 ns/iter (  64 it)  a/b=0.787
+  pair  6 lead=upstream upstream=   1523100 ns/iter (  89 it)  upstream=   1692200 ns/iter (  78 it)  a/b=0.900
+  => median a/b 0.901 [0.787, 1.030]  wins 5/6  z +1.63  upstream 361 MB/s  upstream 305 MB/s
+  null-arm floor for this cell: median 0.901, worst pair 1.213
+
+| file | column | upstream | upstream | upstream/upstream time (median [min, max]) | wins, z |
+|---|---|---:|---:|---:|---:|
+| citm_catalog | dom-parse | upstream **243 MB/s** | upstream 231 MB/s | **0.929x** [0.751, 1.047] | 4/6, z = +0.82 |
+| twitter | dom-parse | upstream **361 MB/s** | upstream 305 MB/s | **0.901x** [0.787, 1.030] | 5/6, z = +1.63 |
+
+method: in-process paired A/B, one binary, both arms linked; lead alternated per pair (ABBA); pairs=6; window=250 ms per arm-sample, statistic=min per-iteration time in the window, verdict=median of paired ratios + paired wins with z; clock=std::time::Instant (QPC on Windows); pinned=cpu2/High; allocator=system (BOTH arms -- it is a property of the binary); isa=scalar (no kernels wired); work parity: identical input bytes, output length asserted equal per pair for serde_json-shaped arms; stringify buffers pre-sized and cleared (growth excluded); competitors: simd-json input copy excluded from the timed region; machine=windows x86_64 ; commit=5f2e46a-dirty

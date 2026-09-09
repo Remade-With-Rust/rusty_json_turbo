@@ -25,7 +25,13 @@ param(
     [int]$Cpu = 2,
     [int]$Pairs = 20,
     [string]$Bench = "solo --all --arm ours",
-    [string]$Out = ""
+    [string]$Out = "",
+    # `NAME=VALUE` set only for that arm. Pass the SAME exe as A and B with
+    # different env to A/B two implementations inside ONE binary: same code
+    # layout, one knob between them. That is strictly better than comparing two
+    # builds, where the layout difference alone has measured +-13%.
+    [string]$EnvA = "",
+    [string]$EnvB = ""
 )
 
 $ErrorActionPreference = 'Stop'
@@ -37,10 +43,20 @@ $benchArgs = @($Bench -split '\s+' | Where-Object { $_ })
 $tmp = Join-Path $env:TEMP ("pinvs-" + [guid]::NewGuid().ToString("N"))
 New-Item -ItemType Directory -Path $tmp | Out-Null
 
-function Invoke-Solo([string]$exe, [string]$tag) {
+function Invoke-Solo([string]$exe, [string]$tag, [string]$envSpec) {
     $log = Join-Path $tmp "$tag.txt"
     $argv = $benchArgs + @('--pinned', "cpu$Cpu/High")
-    $p = Start-Process -FilePath $exe -ArgumentList $argv -PassThru -NoNewWindow -RedirectStandardOutput $log
+    $restore = $null
+    if ($envSpec) {
+        $kv = $envSpec -split '=', 2
+        $restore = @{ Name = $kv[0]; Old = [Environment]::GetEnvironmentVariable($kv[0]) }
+        [Environment]::SetEnvironmentVariable($kv[0], $kv[1])
+    }
+    try {
+        $p = Start-Process -FilePath $exe -ArgumentList $argv -PassThru -NoNewWindow -RedirectStandardOutput $log
+    } finally {
+        if ($restore) { [Environment]::SetEnvironmentVariable($restore.Name, $restore.Old) }
+    }
     $null = $p.Handle
     $p.ProcessorAffinity = $mask
     $p.PriorityClass = 'High'
@@ -85,9 +101,9 @@ $binaryB = ""
 for ($i = 0; $i -lt $Pairs; $i++) {
     # ABBA: alternate which binary leads, so drift cannot settle on one arm.
     if ($i % 2 -eq 0) {
-        $ra = Invoke-Solo $ExeA "a$i"; $rb = Invoke-Solo $ExeB "b$i"
+        $ra = Invoke-Solo $ExeA "a$i" $EnvA; $rb = Invoke-Solo $ExeB "b$i" $EnvB
     } else {
-        $rb = Invoke-Solo $ExeB "b$i"; $ra = Invoke-Solo $ExeA "a$i"
+        $rb = Invoke-Solo $ExeB "b$i" $EnvB; $ra = Invoke-Solo $ExeA "a$i" $EnvA
     }
     if (-not $binaryA) { $binaryA = $ra.Binary; $binaryB = $rb.Binary }
     foreach ($cell in $ra.Rows.Keys) {

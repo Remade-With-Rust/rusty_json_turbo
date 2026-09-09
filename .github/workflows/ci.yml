@@ -153,6 +153,25 @@ jobs:
       - run: cargo check -p rusty_json_turbo-bench --all-targets --locked --features rusty-alloc
       - run: cargo check -p rusty_json_turbo-bench --all-targets --locked --features rusty-alloc-secure
       - run: cargo check -p rusty_json_turbo-bench --all-targets --locked --features profile
+      - run: cargo check -p rusty_json_turbo-bench --all-targets --locked --features turbo/knobs
+      # The A/B knob must actually switch the arm, and BOTH arms must agree with
+      # upstream. A knob that silently does nothing would let a brick look free.
+      - name: Both arms of the whitespace knob agree with upstream
+        run: |
+          for v in 0 1; do
+            RJT_WS_FASTPATH=$v cargo run -p rusty_json_turbo-bench --release --locked \
+              --features turbo/knobs -- diff-oracle corpus/citm_catalog.json | tail -1
+          done
+      # ... and the fast path must still be REACHED. Byte-identical output
+      # cannot see a fast path that quietly stopped being taken; this counts it.
+      - name: The whitespace fast path is still plugged in
+        run: |
+          cargo build -p rusty_json_turbo-bench --release --locked --features turbo/profile
+          on=$(RJT_WS_FASTPATH=1 ./target/release/rjson-bench work --cell citm_catalog,dom-parse | tail -1 | awk '{print $3}')
+          off=$(RJT_WS_FASTPATH=0 ./target/release/rjson-bench work --cell citm_catalog,dom-parse | tail -1 | awk '{print $3}')
+          echo "peek calls: fast=$on slow=$off"
+          test "$on" -lt $((off / 2)) \
+            || { echo "::error::the whitespace fast path is not removing peek calls (fast=$on slow=$off)"; exit 1; }
       - name: The allocation census runs and reports non-zero work
         run: |
           cargo run -p rusty_json_turbo-bench --release --locked --features profile -- \

@@ -25,6 +25,7 @@ use std::time::Duration;
 
 use rjt_bench::alloc_arm;
 use rjt_bench::cells::{self, Arm, Column};
+use rjt_bench::content;
 use rjt_bench::corpus::{self, File};
 use rjt_bench::harness::{self, Config};
 use rjt_bench::oracle;
@@ -52,6 +53,8 @@ fn main() -> ExitCode {
         "null" => bench(&args[1..], Some((Arm::Upstream, Arm::Upstream))),
         "solo" => solo(&args[1..]),
         "census" => census(&args[1..]),
+        "probe" => probe(&args[1..]),
+        "work" => work(&args[1..]),
         "diff-oracle" => diff_oracle(&args[1..]),
         "list" => {
             for f in File::ALL {
@@ -344,6 +347,250 @@ fn census(args: &[String]) -> ExitCode {
             bytes
         );
     }
+    ExitCode::SUCCESS
+}
+
+/// The deterministic work a parse performs, per corpus file.
+///
+/// This is the instrument that decides a brick when the clock cannot: exact,
+/// one run, identical under any load, and it reports whether the fast path is
+/// actually being taken -- which byte-identical output cannot, since a fast
+/// path that quietly stopped being reached still produces the right answer.
+///
+/// Run it twice, `RJT_WS_FASTPATH=1` and `=0`, and diff.
+fn work(args: &[String]) -> ExitCode {
+    let opts = match parse_opts(args, None) {
+        Ok(o) => o,
+        Err(e) => {
+            eprintln!("error: {e}");
+            return ExitCode::from(2);
+        }
+    };
+    if !turbo::counters::enabled() {
+        eprintln!(
+            "error: this build has no work counters -- rebuild the LIBRARY with \
+             --features rusty_json_turbo/profile (and never quote a timing from it)"
+        );
+        return ExitCode::from(2);
+    }
+    println!(
+        "work counters | ws fast path: {} | allocator {}",
+        std::env::var("RJT_WS_FASTPATH").unwrap_or_else(|_| "1 (default)".into()),
+        alloc_arm::name()
+    );
+    println!(
+        "{:<14} {:<14} {:>12} {:>12} {:>12} {:>12} {:>12}",
+        "file", "column", "peek", "next", "discard", "ws_runs", "ws_bytes"
+    );
+    let mut seen = Vec::new();
+    for (file, column) in &opts.cells {
+        if seen.contains(&(*file, *column)) {
+            continue;
+        }
+        seen.push((*file, *column));
+        let input = file.load();
+        turbo::counters::reset();
+        let before = turbo::counters::snapshot();
+        match column {
+            Column::DomParse => {
+                let v: turbo::Value = turbo::from_slice(&input).unwrap();
+                drop(v);
+            }
+            Column::Scan => {
+                turbo::from_slice::<serde::de::IgnoredAny>(&input).unwrap();
+            }
+            Column::StructParse => match file {
+                File::Twitter => {
+                    drop(turbo::from_slice::<rjt_bench::twitter::Twitter>(&input).unwrap());
+                }
+                File::CitmCatalog => {
+                    drop(
+                        turbo::from_slice::<rjt_bench::citm_catalog::CitmCatalog>(&input).unwrap(),
+                    );
+                }
+                File::Canada => {
+                    drop(turbo::from_slice::<rjt_bench::canada::Canada>(&input).unwrap());
+                }
+            },
+            other => {
+                eprintln!("work: {} has no parse to count", other.name());
+                continue;
+            }
+        }
+        let c = turbo::counters::snapshot().since(before);
+        println!(
+            "{:<14} {:<14} {:>12} {:>12} {:>12} {:>12} {:>12}",
+            file.name(),
+            column.name(),
+            c.peek,
+            c.next,
+            c.discard,
+            c.ws_runs,
+            c.ws_bytes
+        );
+    }
+    ExitCode::SUCCESS
+}
+
+/// Price every brick before building any of it.
+///
+/// Two instruments, both cheap, in the order `codec-measurement` puts them:
+///
+/// 1. A **content census** -- a deterministic count of where the document's
+///    bytes go. A brick that targets whitespace cannot win more than the
+///    whitespace costs, and that is knowable exactly, on any machine, without
+///    a clock.
+/// 2. A **scan-only ceiling** -- `IgnoredAny` walks the document and builds
+///    nothing. Whatever `dom-parse` costs above it is what building the value
+///    costs, which is the most any value-construction brick can win back.
+///    No stubbing, so the probe cannot mis-measure by deleting a branch the
+///    program depends on.
+fn probe(args: &[String]) -> ExitCode {
+    let opts = match parse_opts(args, None) {
+        Ok(o) => o,
+        Err(e) => {
+            eprintln!("error: {e}");
+            return ExitCode::from(2);
+        }
+    };
+    settle(opts.settle_ms);
+
+    let files: Vec<File> = {
+        let mut v: Vec<File> = Vec::new();
+        for (f, _) in &opts.cells {
+            if !v.contains(f) {
+                v.push(*f);
+            }
+        }
+        v
+    };
+
+    println!("== content census (deterministic; no clock involved)\n");
+    println!(
+        "{:<14} {:>10} {:>8} {:>8} {:>8} {:>8} {:>8} {:>9} {:>9}",
+        "file", "bytes", "ws%", "struct%", "string%", "number%", "n-ascii%", "strings", "numbers"
+    );
+    let mut censuses = Vec::new();
+    for f in &files {
+        let input = f.load();
+        let c = content::census(&input);
+        println!(
+            "{:<14} {:>10} {:>7.1}% {:>7.1}% {:>7.1}% {:>7.1}% {:>7.1}% {:>9} {:>9}",
+            f.name(),
+            c.bytes,
+            c.whitespace_pct(),
+            c.structural_pct(),
+            c.string_pct(),
+            c.number_pct(),
+            c.non_ascii_pct(),
+            c.strings,
+            c.numbers
+        );
+        censuses.push((*f, c));
+    }
+    println!(
+        "\n{:<14} {:>9} {:>11} {:>9} {:>12} {:>10} {:>12}",
+        "file", "escaped%", "mean-str", "longest", "escape-B", "floats", "literals-B"
+    );
+    for (f, c) in &censuses {
+        println!(
+            "{:<14} {:>8.1}% {:>11.1} {:>9} {:>12} {:>10} {:>12}",
+            f.name(),
+            c.escaped_string_pct(),
+            c.mean_string_len(),
+            c.longest_string,
+            c.escape_bytes,
+            c.floats,
+            c.literal_bytes
+        );
+    }
+
+    println!("\n== ceiling probe: what is left when nothing is built\n");
+    println!(
+        "arm=ours allocator={} rounds={} window={} ms  (cell order ROTATED each round, \
+         so no cell is always first; per-cell statistic = min over rounds of the \
+         min-per-iteration in that round's window)",
+        alloc_arm::name(),
+        opts.cfg.pairs,
+        opts.cfg.window.as_millis()
+    );
+    if alloc_arm::counting() {
+        println!("!! COUNTING BUILD: timings here are taxed and not quotable");
+    }
+
+    for f in &files {
+        let input = f.load();
+        // The same document with the whitespace a parser skips removed, and
+        // nothing else changed. If the two do not parse equal, the probe is
+        // measuring two different programs and its numbers are worthless.
+        let stripped = content::strip_whitespace(&input);
+        let a: turbo::Value = turbo::from_slice(&input).expect("corpus parses");
+        let b: turbo::Value = turbo::from_slice(&stripped).expect("stripped corpus parses");
+        assert_eq!(a, b, "{}: stripping whitespace changed the value", f.name());
+        drop((a, b));
+
+        // (label, column, input) -- rotated each round so no job is always first.
+        let jobs: [(&str, Column, &[u8]); 5] = [
+            ("scan", Column::Scan, &input),
+            ("scan, no ws", Column::Scan, &stripped),
+            ("struct-parse", Column::StructParse, &input),
+            ("dom-parse", Column::DomParse, &input),
+            ("dom-parse, no ws", Column::DomParse, &stripped),
+        ];
+        let mut best = [u64::MAX; 5];
+        for round in 0..opts.cfg.pairs {
+            for k in 0..jobs.len() {
+                let idx = (k + round) % jobs.len();
+                let (_, col, data) = jobs[idx];
+                let s = cells::run(Arm::Ours, *f, col, data, opts.cfg.window);
+                best[idx] = best[idx].min(s.min_ns());
+            }
+        }
+        let (scan, scan_nows) = (best[0] as f64, best[1] as f64);
+        let (structp, dom, dom_nows) = (best[2] as f64, best[3] as f64, best[4] as f64);
+
+        println!(
+            "\n-- {} ({} bytes; {} with whitespace removed)",
+            f.name(),
+            input.len(),
+            stripped.len()
+        );
+        for (i, (label, _, data)) in jobs.iter().enumerate() {
+            println!(
+                "   {:<18} {:>10} ns  {:>7.0} MB/s",
+                label,
+                best[i],
+                data.len() as f64 / best[i] as f64 * 1e3
+            );
+        }
+        println!(
+            "   scanning is {:.0}% of dom-parse and {:.0}% of struct-parse",
+            scan / dom * 100.0,
+            scan / structp * 100.0
+        );
+        println!(
+            "   CEILING, value construction free : {:.2}x on dom-parse",
+            dom / scan
+        );
+        println!(
+            "   CEILING, struct machinery free   : {:.2}x on struct-parse",
+            structp / scan
+        );
+        println!(
+            "   CEILING, whitespace skip free    : {:.2}x on scan ({:.0}% of it), \
+             {:.2}x on dom-parse ({:.0}% of it)",
+            scan / scan_nows,
+            (scan - scan_nows) / scan * 100.0,
+            dom / dom_nows,
+            (dom - dom_nows) / dom * 100.0
+        );
+    }
+    println!(
+        "\nRead these as shares, not as verdicts: the cells run block-wise inside \
+         one process (rotated, not paired), so a few percent of drift is expected. \
+         A ceiling is used to decide whether a brick is worth BUILDING -- and the \
+         arithmetic that matters is share x plausible speedup against the floor."
+    );
     ExitCode::SUCCESS
 }
 

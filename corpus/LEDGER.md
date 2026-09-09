@@ -375,6 +375,121 @@ toolchain as in the M0 environment block; commit `4c8e0b3`+. Raw per-pair logs:
 Reverts this session: none. Nothing was reverted because nothing was changed --
 that is the point of the experiment.
 
+---
+
+### 2026-09-09 -- M1-B: the corpus priced, and M2-B1: the first brick
+
+**The instruments first, because they decided what to build.**
+
+#### Content census (deterministic; the clock is not involved)
+
+| file | bytes | ws% | struct% | string% | number% | non-ascii% | strings | numbers |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| twitter | 646,995 | 27.8% | 10.3% | **57.1%** | 1.5% | 14.7% | 18,099 | 2,109 |
+| citm_catalog | 1,777,672 | **71.9%** | 8.3% | 12.5% | 7.1% | 0.0% | 26,604 | 14,392 |
+| canada | 2,251,060 | 0.0% | 9.9% | 0.0% | **90.1%** | 0.0% | 12 | 111,126 |
+
+Escapes are rare everywhere: 1.7% of twitter's strings contain one, 0.0% of the
+other two files'. Cross-checked independently (`python`: raw whitespace bytes,
+digit bytes, and the size a minified re-serialisation would be) -- citm is
+28.2% of its size when minified, confirming 71.9%; the census's twitter figure
+(27.8%) is correctly *lower* than the raw count (28.3%) because whitespace
+inside string literals is part of the value and is not skipped.
+
+**The three files are nearly orthogonal**, which makes them a real test matrix:
+canada is a float benchmark with no whitespace and no strings, citm is
+three-quarters indentation, twitter is strings and Unicode. A brick that helps
+one should visibly not help the others, and that is a gate, not a nicety.
+
+#### Ceiling probe (arm=ours, rusty_alloc, 7 rounds, cell order rotated)
+
+`scan` = `IgnoredAny`: walks the document and builds nothing. No stubbing, so
+it cannot mis-measure by deleting a branch the program depends on. `no ws` = the
+same document with the whitespace a parser skips removed and every token byte
+preserved (asserted to parse to an equal `Value`).
+
+| file | scan | struct-parse | dom-parse | scan share of dom | ceiling if Value free | ceiling if ws-skip free |
+|---|---:|---:|---:|---:|---:|---:|
+| twitter | 314,400 ns | 605,300 ns | 879,800 ns | 36% | **2.80x** | 1.12x (10% of dom) |
+| citm_catalog | 878,500 ns | 1,200,000 ns | 1,718,100 ns | 51% | **1.96x** | **1.56x (36% of dom)** |
+| canada | 1,477,500 ns | 2,786,000 ns | 4,184,700 ns | 35% | **2.83x** | 1.00x (0% of dom) |
+
+Two decisions fell straight out. **Value construction is 47-64% of DOM parse**
+-- the largest ceiling anywhere, and consistent with the allocator experiment
+that moved the same cells 1.5x. And **whitespace skipping is 36% of DOM parse on
+citm and 64% of its scan**, which is a large, cheap, byte-identical target. The
+latter is smaller but far lower risk, so it goes first.
+
+#### Brick B1 -- whitespace skipping off the per-byte path (KEPT)
+
+`parse_whitespace` walked whitespace through `peek()`/`discard()`, paying a
+`Result<Option<u8>>` construction, a match and a bounds check for every byte of
+indentation. It now delegates to a new sealed-trait method `Read::skip_whitespace`
+whose default body is exactly the old loop, overridden by `SliceRead` with one
+walk of the slice. `StrRead` delegates; `IoRead` keeps the default.
+
+**Correctness:** upstream's suite (235 tests + 97 doctests), the oracle (66
+corpus + 118 edge documents + 93,893 number tokens, every feature flag), and a
+300,000-case differential soak -- all green, zero divergences.
+
+**Deterministic verdict (the primary instrument).** Counted with
+`rjson-bench work`, one run each, `RJT_WS_FASTPATH` toggling the arm inside one
+binary:
+
+| cell | peek before | peek after | removed | discard removed |
+|---|---:|---:|---:|---:|
+| citm_catalog dom-parse | 1,587,979 | 141,319 | **-91.1%** | -84.5% |
+| twitter dom-parse | 250,193 | 11,958 | **-95.2%** | -74.7% |
+| canada dom-parse | 2,751,947 | 2,194,321 | **-20.3%** | -33 calls |
+
+**The arithmetic closes exactly, on all three files:**
+`peeks removed = whitespace runs + whitespace bytes`
+(citm 169,287 + 1,277,373 = 1,446,660, measured 1,446,660; twitter 58,146 +
+180,089 = 238,235, measured 238,235; canada 557,593 + 33 = 557,626, measured
+557,626). Discards removed equals the whitespace-byte count exactly. An
+instrument that reconciles to the byte on three unrelated documents is not
+measuring noise.
+
+That exactness also produced a finding the byte census had not: **the brick
+removes one `peek` per whitespace *check*, not merely per whitespace byte.**
+canada contains 33 whitespace bytes in 2.25 MB and still loses 557,626 peek
+calls, because `parse_whitespace` is called 557,593 times and each call used to
+pay a `peek()` just to discover the next byte was already a token. So this helps
+minified documents too, which is not what the 0%-whitespace row predicted.
+
+**Timing verdict (same binary, one env var between the arms).** Comparing two
+*builds* was tried first and abandoned: the four stringify cells, which cannot
+reach this code at all, moved 0.866x-1.070x, so build-to-build layout alone is
+worth +-13% here and swamps the effect. The knob removes that entirely -- one
+binary, one layout. 15 pairs, ABBA, pinned; **ratio > 1 means the brick is
+faster**:
+
+| cell | old / brick | brick won |
+|---|---:|---:|
+| citm_catalog scan | **1.168x** | 15/15, z = 3.87 |
+| citm_catalog struct-parse | **1.057x** | 14/15, z = 3.36 |
+| twitter scan | **1.055x** | 13/15, z = 2.84 |
+| canada scan | **1.036x** | 12/15, z = 2.32 |
+| citm_catalog dom-parse | 1.031x | 10/15, z = 1.29 -- under-resolved |
+| twitter / canada dom-parse, struct-parse | 0.992x-1.008x | not significant |
+| **stringify x4 (the control)** | **0.987x-1.011x** | **not significant, as required** |
+
+The controls are the point: four cells that never call this code did not move,
+in the same run that moved `scan` by 16.8% at 15/15.
+
+**Honest limits.** The box was throttled all session -- the untouched upstream
+arm read 243 MB/s on citm dom-parse against 640 MB/s at M0, and every core
+tested read 350-400 against that 640. So absolute MB/s here are not comparable
+with the M0 tables, and the dom-parse cells (where a ~9% effect is predicted)
+are under-resolved rather than refuted. The counters are what keep this a
+verdict.
+
+**What is left.** Whitespace costs 565,500 ns of citm's 878,500 ns scan. The
+brick recovered about 126,000 ns of it -- **roughly a fifth of the available
+whitespace cost.** The other four fifths are still there, and that is the
+measured, precise target for a wide (SWAR or SIMD) scan, which is the next
+brick rather than a guess.
+
 #### M1 instruments landed alongside it
 
 - **Allocation census** (`rjson-bench census`, `--features profile`): the table

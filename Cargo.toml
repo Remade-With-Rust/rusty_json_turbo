@@ -125,9 +125,17 @@ raw_value = []
 # limited to, Display and Debug and Drop impls.
 unbounded_depth = []
 
-# House instruments (stage profiler, reach census, work counters). Zero-sized
-# and compiled out when off; filled in at M1 of docs/plans/fast_mission.md.
-profile = []
+# Runtime A/B knobs (`RJT_*`). OFF in a shipped build: every routing decision
+# they gate is then a compile-time constant, so the shipping arm costs nothing.
+# Turn them on to A/B two implementations **in one binary** -- which is the only
+# way to compare them without also comparing two code layouts, and layout alone
+# has measured +-13% between two builds of this crate.
+knobs = ["std"]
+# The deterministic work counters in `counters`. Implies `knobs` so a counting
+# build can also toggle the arm it is counting. NEVER quote a timing from a
+# build with this on: it adds an atomic increment to the hottest paths, and it
+# taxes the two arms unequally, which would flatter whichever does less work.
+profile = ["std", "knobs"]
 
 [lints.rust]
 # Inherited from upstream: 12 `unsafe` sites (from_utf8_unchecked on validated

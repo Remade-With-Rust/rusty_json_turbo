@@ -1,0 +1,14 @@
+rjson-bench: upstream vs upstream (NULL ARM: the floor) | 1 cells | 3 pairs | 200 ms windows | allocator system
+
+== citm_catalog / dom-parse (1777672 bytes)
+  pair  1 lead=upstream upstream=   4503900 ns/iter (  23 it)  upstream=   5070200 ns/iter (  24 it)  a/b=0.888
+  pair  2 lead=upstream upstream=   5055000 ns/iter (  23 it)  upstream=   5400700 ns/iter (  21 it)  a/b=0.936
+  pair  3 lead=upstream upstream=   5880900 ns/iter (  19 it)  upstream=   8175300 ns/iter (  17 it)  a/b=0.719
+  => median a/b 0.888 [0.719, 0.936]  wins 3/3  z +1.73  upstream 352 MB/s  upstream 329 MB/s
+  null-arm floor for this cell: median 0.888, worst pair 1.281
+
+| file | column | upstream | upstream | upstream/upstream time (median [min, max]) | wins, z |
+|---|---|---:|---:|---:|---:|
+| citm_catalog | dom-parse | upstream **352 MB/s** | upstream 329 MB/s | **0.888x** [0.719, 0.936] | 3/3, z = +1.73 |
+
+method: in-process paired A/B, one binary, both arms linked; lead alternated per pair (ABBA); pairs=3; window=200 ms per arm-sample, statistic=min per-iteration time in the window, verdict=median of paired ratios + paired wins with z; clock=std::time::Instant (QPC on Windows); pinned=cpu14/High; allocator=system (BOTH arms -- it is a property of the binary); isa=scalar (no kernels wired); work parity: identical input bytes, output length asserted equal per pair for serde_json-shaped arms; stringify buffers pre-sized and cleared (growth excluded); competitors: simd-json input copy excluded from the timed region; machine=windows x86_64 ; commit=5f2e46a-dirty

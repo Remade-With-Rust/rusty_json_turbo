@@ -17,6 +17,10 @@ this current in the same commit as the change: it is the merge map for
 | 2026-09-09 | `src/value/mod.rs:241` | `#[allow(clippy::io_other_error)]` on the local `io_error` fn | clippy `io_other_error` is MSRV-gated and woke up at 1.85 (upstream's 1.71 suppressed it); the call cannot change because the no_std shim (`src/io/core.rs`) has no `Error::other` | none | -- |
 | 2026-09-09 | `src/de.rs:827`, `src/lexical/math.rs:504`, `tests/test.rs:1906,1918` | `iter::repeat(x).take(n)` -> `iter::repeat_n(x, n)` | clippy `manual_repeat_n`, same MSRV cause; identical iteration | none | oracle green, M0 |
 
+| 2026-09-09 | `src/read.rs`, `src/de.rs:255` | **Brick B1.** New sealed-trait method `Read::skip_whitespace`, default body = the loop `parse_whitespace` used to contain; `SliceRead` overrides it with one walk of the slice, `StrRead` delegates, `IoRead` keeps the default. `parse_whitespace` now delegates | whitespace is 71.9% of citm_catalog and 36% of the time to parse it into a `Value`; the old route paid a `Result<Option<u8>>` round trip per byte | **none** -- byte-identical, oracle + 300k soak green | LEDGER 2026-09-09 M2-B1: peek calls -91.1%/-95.2%/-20.3%, `peeks removed = ws_runs + ws_bytes` exactly; citm scan 1.168x at 15/15 |
+| 2026-09-09 | `src/counters.rs` (new), `src/read.rs` | Deterministic work counters (`peek`, `next`, `discard`, `ws_runs`, `ws_bytes`) behind `profile`; `RJT_WS_FASTPATH` A/B knob behind `knobs`. Both compile out entirely when off | the clock cannot decide a brick on a throttled laptop; a count can, and it also proves the fast path is still *reached* | none when the features are off | -- |
+| 2026-09-09 | `Cargo.toml` | `profile = ["std", "knobs"]`, new `knobs = ["std"]` | the counters need 64-bit atomics and the knob needs an environment; a measurement build is a host build | none | -- |
+
 **Fork point, precisely.** The tree is upstream `master` at `afdf6fc`, which is the
 v1.0.151 tag plus four commits that change no behaviour: remove the deprecated
 `authors` field (99edc94, a3e9758), rename deprecated `f64` constants in

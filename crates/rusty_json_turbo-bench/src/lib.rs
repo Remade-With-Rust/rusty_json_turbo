@@ -49,6 +49,7 @@ pub mod twitter;
 
 pub mod alloc_arm;
 pub mod cells;
+pub mod content;
 pub mod corpus;
 pub mod harness;
 pub mod oracle;

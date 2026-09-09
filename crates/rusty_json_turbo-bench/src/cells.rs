@@ -64,9 +64,19 @@ pub enum Column {
     DomStringify,
     StructParse,
     StructStringify,
+    /// Walk the document and build **nothing** (`IgnoredAny`).
+    ///
+    /// The ceiling probe for every value-construction brick, and it needs no
+    /// stubbing: this is a real, correct API doing real scanning work, so it
+    /// cannot mis-measure by removing a branch the rest of the program depends
+    /// on. Whatever `dom-parse` costs above this is what building the `Value`
+    /// costs, and that is the most any DOM brick can ever win back.
+    Scan,
 }
 
 impl Column {
+    /// The four json-benchmark columns, unchanged, so every table published so
+    /// far stays comparable. `Scan` is deliberately NOT here.
     pub const ALL: [Column; 4] = [
         Column::DomParse,
         Column::DomStringify,
@@ -74,12 +84,16 @@ impl Column {
         Column::StructStringify,
     ];
 
+    /// The three cells a ceiling probe compares, cheapest first.
+    pub const PROBE: [Column; 3] = [Column::Scan, Column::StructParse, Column::DomParse];
+
     pub fn parse(s: &str) -> Option<Column> {
         match s {
             "dom-parse" | "dom_parse" => Some(Column::DomParse),
             "dom-stringify" | "dom_stringify" => Some(Column::DomStringify),
             "struct-parse" | "struct_parse" => Some(Column::StructParse),
             "struct-stringify" | "struct_stringify" => Some(Column::StructStringify),
+            "scan" => Some(Column::Scan),
             _ => None,
         }
     }
@@ -90,6 +104,7 @@ impl Column {
             Column::DomStringify => "dom-stringify",
             Column::StructParse => "struct-parse",
             Column::StructStringify => "struct-stringify",
+            Column::Scan => "scan",
         }
     }
 }
@@ -161,6 +176,15 @@ fn census_typed<T: Fixture>(
                 turbo::from_str::<T>(s).unwrap()
             });
             drop(v);
+            (input.len(), c)
+        }
+        Column::Scan => {
+            // `IgnoredAny` is a zero-sized Copy marker: there is nothing to drop,
+            // which is the point of the column.
+            let (_, c) = crate::alloc_arm::measure(|| {
+                let s = std::str::from_utf8(input).unwrap();
+                turbo::from_str::<serde::de::IgnoredAny>(s).unwrap()
+            });
             (input.len(), c)
         }
         Column::DomStringify => {
@@ -287,6 +311,18 @@ macro_rules! serde_json_arm {
                     });
                     Sample { ns, bytes: out }
                 }
+                Column::Scan => {
+                    let ns = measure(window, || {
+                        timed(|| {
+                            let s = std::str::from_utf8(black_box(input)).unwrap();
+                            $json::from_str::<serde::de::IgnoredAny>(s).unwrap()
+                        })
+                    });
+                    Sample {
+                        ns,
+                        bytes: input.len(),
+                    }
+                }
             }
         }
     };
@@ -301,6 +337,18 @@ fn simd_json_arm<T: Fixture>(column: Column, input: &[u8], window: Duration) -> 
     // input. The copy is outside the timed region, as in json-benchmark.
     let mut scratch = input.to_vec();
     match column {
+        Column::Scan => {
+            let ns = measure(window, || {
+                scratch.copy_from_slice(input);
+                timed(|| {
+                    simd_json::serde::from_slice::<serde::de::IgnoredAny>(&mut scratch).unwrap()
+                })
+            });
+            Sample {
+                ns,
+                bytes: input.len(),
+            }
+        }
         Column::DomParse => {
             let ns = measure(window, || {
                 scratch.copy_from_slice(input);
@@ -353,6 +401,15 @@ fn simd_json_arm<T: Fixture>(column: Column, input: &[u8], window: Duration) -> 
 fn sonic_rs_arm<T: Fixture>(column: Column, input: &[u8], window: Duration) -> Sample {
     let text = std::str::from_utf8(input).unwrap();
     match column {
+        Column::Scan => {
+            let ns = measure(window, || {
+                timed(|| sonic_rs::from_str::<serde::de::IgnoredAny>(black_box(text)).unwrap())
+            });
+            Sample {
+                ns,
+                bytes: input.len(),
+            }
+        }
         Column::DomParse => {
             let ns = measure(window, || {
                 timed(|| sonic_rs::from_str::<sonic_rs::Value>(black_box(text)).unwrap())

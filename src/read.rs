@@ -35,6 +35,31 @@ pub trait Read<'de>: private::Sealed {
     #[doc(hidden)]
     fn discard(&mut self);
 
+    /// Skip insignificant whitespace and peek the next byte, without consuming
+    /// it. Equivalent to `while peek() is whitespace { discard() }; peek()`.
+    ///
+    /// This exists as its own method because whitespace is the single largest
+    /// class of byte in pretty-printed JSON -- 71.9% of `citm_catalog.json`,
+    /// where skipping it measured **36% of the time to parse the document into
+    /// a `Value`**. Going through `peek()`/`discard()` costs a `Result<Option>`
+    /// construction, a match and a bounds check for every one of those bytes.
+    /// A reader that owns a contiguous buffer can do far better, so it gets to
+    /// override this; the default is exactly the loop it replaces.
+    ///
+    /// Only ` `, `\n`, `\t` and `\r` are insignificant. Any other byte <= 0x20
+    /// is invalid at this position and must be RETURNED rather than skipped, so
+    /// that the parser reports it at the right line and column.
+    #[doc(hidden)]
+    #[inline]
+    fn skip_whitespace(&mut self) -> Result<Option<u8>> {
+        loop {
+            match tri!(self.peek()) {
+                Some(b' ' | b'\n' | b'\t' | b'\r') => self.discard(),
+                other => return Ok(other),
+            }
+        }
+    }
+
     /// Position of the most recent call to next().
     ///
     /// The most recent call was probably next() and not peek(), but this method
@@ -538,6 +563,18 @@ impl<'a> SliceRead<'a> {
     }
 }
 
+/// Is the whitespace fast path on? `knobs` builds only; cached, so the
+/// environment is read once per process rather than once per whitespace run.
+///
+/// This is the A/B instrument for the whitespace brick: one binary, one code
+/// layout, one env var between the arms. Comparing two *builds* instead would
+/// confound the change with its layout, and layout alone is worth +-13% here.
+#[cfg(feature = "knobs")]
+fn ws_fastpath() -> bool {
+    static V: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *V.get_or_init(|| std::env::var("RJT_WS_FASTPATH").map_or(true, |v| v != "0"))
+}
+
 impl<'a> private::Sealed for SliceRead<'a> {}
 
 impl<'a> Read<'a> for SliceRead<'a> {
@@ -545,6 +582,7 @@ impl<'a> Read<'a> for SliceRead<'a> {
     fn next(&mut self) -> Result<Option<u8>> {
         // `Ok(self.slice.get(self.index).map(|ch| { self.index += 1; *ch }))`
         // is about 10% slower.
+        crate::counters::add(&crate::counters::NEXT, 1);
         Ok(if self.index < self.slice.len() {
             let ch = self.slice[self.index];
             self.index += 1;
@@ -558,6 +596,7 @@ impl<'a> Read<'a> for SliceRead<'a> {
     fn peek(&mut self) -> Result<Option<u8>> {
         // `Ok(self.slice.get(self.index).map(|ch| *ch))` is about 10% slower
         // for some reason.
+        crate::counters::add(&crate::counters::PEEK, 1);
         Ok(if self.index < self.slice.len() {
             Some(self.slice[self.index])
         } else {
@@ -567,7 +606,49 @@ impl<'a> Read<'a> for SliceRead<'a> {
 
     #[inline]
     fn discard(&mut self) {
+        crate::counters::add(&crate::counters::DISCARD, 1);
         self.index += 1;
+    }
+
+    #[inline]
+    fn skip_whitespace(&mut self) -> Result<Option<u8>> {
+        // MEASUREMENT ARM, `profile` builds only: `RJT_WS_FASTPATH=0` forces the
+        // old byte-at-a-time route so both arms can be COUNTED in one binary.
+        // The knob is resolved once and cached, and it is read once per
+        // whitespace run rather than per byte, so it does not itself become the
+        // thing being measured.
+        #[cfg(feature = "knobs")]
+        if !ws_fastpath() {
+            loop {
+                match tri!(self.peek()) {
+                    Some(b' ' | b'\n' | b'\t' | b'\r') => self.discard(),
+                    other => return Ok(other),
+                }
+            }
+        }
+
+        // One walk of the slice with the index in a register, instead of a
+        // `Result<Option<u8>>` round trip per byte through peek()/discard().
+        // Byte-for-byte the same decision as the default loop: exactly the
+        // four insignificant whitespace bytes are skipped, and the first byte
+        // that is not one of them is returned WITHOUT being consumed.
+        let slice = self.slice;
+        let start = self.index;
+        let mut i = start;
+        while i < slice.len() {
+            let ch = slice[i];
+            if !matches!(ch, b' ' | b'\n' | b'\t' | b'\r') {
+                self.index = i;
+                crate::counters::add(&crate::counters::WS_RUNS, 1);
+                crate::counters::add(&crate::counters::WS_BYTES, (i - start) as u64);
+                return Ok(Some(ch));
+            }
+            i += 1;
+        }
+        self.index = i;
+        crate::counters::add(&crate::counters::WS_RUNS, 1);
+        crate::counters::add(&crate::counters::WS_BYTES, (i - start) as u64);
+        Ok(None)
     }
 
     fn position(&self) -> Position {
@@ -692,6 +773,11 @@ impl<'a> Read<'a> for StrRead<'a> {
     #[inline]
     fn discard(&mut self) {
         self.delegate.discard();
+    }
+
+    #[inline]
+    fn skip_whitespace(&mut self) -> Result<Option<u8>> {
+        self.delegate.skip_whitespace()
     }
 
     fn position(&self) -> Position {

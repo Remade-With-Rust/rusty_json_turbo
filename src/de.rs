@@ -253,16 +253,11 @@ impl<'de, R: Read<'de>> Deserializer<R> {
     /// Returns the first non-whitespace byte without consuming it, or `None` if
     /// EOF is encountered.
     fn parse_whitespace(&mut self) -> Result<Option<u8>> {
-        loop {
-            match tri!(self.peek()) {
-                Some(b' ' | b'\n' | b'\t' | b'\r') => {
-                    self.eat_char();
-                }
-                other => {
-                    return Ok(other);
-                }
-            }
-        }
+        // Delegated so a reader over a contiguous buffer can walk the run in
+        // one pass instead of a peek()/discard() round trip per byte. See
+        // `Read::skip_whitespace`; the default implementation there is exactly
+        // the loop this used to be.
+        self.read.skip_whitespace()
     }
 
     #[cold]

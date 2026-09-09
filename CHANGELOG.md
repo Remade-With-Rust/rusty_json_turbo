@@ -39,6 +39,21 @@ carry their measured numbers and method line, never an adjective.
   `rusty_alloc` and `secure`: no output byte changes. Stated there, and here:
   this is the allocator's win, not the fork's.
 
+- M1 instruments: a **content census** (`rjson-bench probe`) that counts where a
+  document's bytes go, a **scan-only ceiling** (`IgnoredAny`, no stubbing) that
+  bounds every value-construction brick, an exact **whitespace ceiling** (the
+  same document with skippable whitespace removed, asserted to parse equal),
+  and **deterministic work counters** (`rjson-bench work`, library feature
+  `profile`) with an `RJT_*` A/B knob (feature `knobs`) so two implementations
+  can be compared inside one binary rather than across two code layouts.
+- **Brick B1** (first performance change to the JSON code): whitespace skipping
+  moved off the per-byte `peek()`/`discard()` path into one walk of the slice,
+  via a new sealed-trait method `Read::skip_whitespace` whose default body is
+  the loop it replaces. Byte-identical. Peek calls fall 91.1% on
+  `citm_catalog`, 95.2% on `twitter`, 20.3% on `canada`; `citm_catalog` scan is
+  1.168x faster in 15 of 15 paired runs, with four stringify control cells
+  correctly unmoved. Full evidence and limits: `corpus/LEDGER.md`.
+
 ### Changed
 
 - Nothing in the library's behaviour. The oracle test proves every corpus file,
