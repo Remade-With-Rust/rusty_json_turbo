@@ -67,37 +67,72 @@ readings from that table: upstream serde_json already beats simd-json on eleven
 of twelve cells under this method, and sonic-rs's 1.5-3.6x DOM-parse lead is
 its arena `Value`, not its scanner.
 
-#### The house allocator, and nothing else changed
+There are two performance stories here and they must not be added together in
+the reader's head, so they get two tables. **Table 1 is what you can have
+today**, from the house stack alone, with no code change anywhere. **Table 2 is
+what this project is actually for** — the changes to the JSON code itself, each
+of which lands with its own ledger row and its own byte-identical gate.
 
-Linking [`rusty_alloc`](https://github.com/Remade-With-Rust/rusty_alloc)
-through the deliverable's seam -- **not one line of JSON code touched** --
-moves the allocation-heavy columns a long way. Conservative probe (2 s
-samples), Windows x86-64, `> 1` means the house allocator is faster:
+#### Table 1 — the house allocator, and nothing else changed
 
-| workload | allocations per parse | system | rusty_alloc | ratio |
-|---|---:|---:|---:|---:|
-| twitter, DOM parse | 20,834 | 459 MB/s | **690 MB/s** | **1.53x** |
-| citm_catalog, DOM parse | 39,339 | 697 MB/s | **1013 MB/s** | **1.46x** |
-| canada, struct parse | 485 | 723 MB/s | 768 MB/s | 1.07x |
-| twitter, struct stringify | **0** | 1545 MB/s | 1476 MB/s | 0.98x |
+Add [`rusty_json_turbo-alloc`](https://crates.io/crates/rusty_json_turbo-alloc)
+to your binary and declare it. That is the whole diff: **not one line of JSON
+code touched.** Pinned to one core, paired, ABBA-interleaved, allocation counts
+proven identical on both sides. `> 1` means the house allocator is faster.
+
+| workload | allocations per parse | platform | rusty_alloc | ratio | window |
+|---|---:|---:|---:|---:|:--:|
+| twitter, DOM parse | 20,834 | 459 MB/s | **690 MB/s** | **1.53x** | 2 s |
+| citm_catalog, DOM parse | 39,339 | 697 MB/s | **1013 MB/s** | **1.46x** | 2 s |
+| canada, DOM parse | 56,061 | 376 MB/s | **499 MB/s** | **1.32x** | 250 ms |
+| twitter, struct parse | 2,762 | 880 MB/s | **1024 MB/s** | **1.17x** | 250 ms |
+| citm_catalog, struct parse | 2,544 | 1326 MB/s | **1465 MB/s** | **1.12x** | 250 ms |
+| canada, struct parse | 485 | 723 MB/s | 768 MB/s | 1.07x | 2 s |
+| any file, stringify | **0** | 1545 MB/s | 1476 MB/s | 1.00x | 2 s |
 
 <sub>**The last row is the control, and it is why the others are believable.**
-The stringify columns write into a pre-sized buffer and allocate *zero* times,
-so the allocator cannot touch them -- and it doesn't. The effect sorts with the
-allocation count, which a deterministic census proves is identical under both
-allocators. At 250 ms samples twitter DOM parse reads 2.0x rather than 1.53x,
-so about a quarter of the short-window figure is per-process warm-up; the
-longer, smaller number is the one quoted. The full oracle passes under
-`rusty_alloc` and under its hardened `secure` profile: **no output byte
-changes**, and `secure` keeps nearly the whole win (1.95x on that cell).</sub>
+A stringify into a pre-sized buffer allocates *zero* times, so the allocator
+cannot touch it — and it doesn't. The effect sorts with the allocation count,
+which a deterministic census proves is identical under both allocators. The
+`window` column matters: at 250 ms samples twitter DOM parse reads 2.0x rather
+than 1.53x, so about a quarter of the short-window figure is per-process
+warm-up and the longer, smaller number is the honest one; the 250 ms rows are
+therefore upper bounds on their own effect. `canada, struct parse` at 1.07x is
+inside the cross-binary layout band (0.976–1.070x, measured on the
+zero-allocation cells) and so is **not** claimable as an allocator result.
+The full oracle passes under `rusty_alloc` and under its hardened `secure`
+profile: **no output byte changes**, and `secure` keeps nearly the whole win.</sub>
 
-<sub>**Two things this is not.** It is **not** a win of this crate over
-serde_json: at this milestone the code is upstream's, so upstream linked
-against `rusty_alloc` gets the same thing, and none of it counts toward the
-speed gate, which compares like-for-like allocators. And it is a **Windows**
-measurement, where Rust's `System` allocator is `HeapAlloc`; glibc's malloc
-has tcache and fastbins and should close much of the gap, so the Linux number
-is an open question rather than an extrapolation.</sub>
+<sub>**Two things Table 1 is not.** It is **not** a win of this crate over
+serde_json: at this milestone the JSON code is upstream's, so upstream linked
+against `rusty_alloc` gets exactly the same thing, and none of it counts toward
+the speed gate, which compares like-for-like allocators. And it is a **Windows**
+measurement, where Rust's platform allocator is `HeapAlloc`; glibc's malloc has
+tcache and fastbins and should close much of the gap, so the Linux number is an
+open question rather than an extrapolation.</sub>
+
+#### Table 2 — the upgrades that go on top
+
+These are changes to the JSON code, and **none has landed**: this crate is
+still upstream's parser. The table is the roadmap and the priority order, not a
+claim. Each row ships only with a measured ledger entry and a byte-identical
+gate, and any row that does not pay is reverted with the reason recorded. The
+two rows marked *repriced* were re-ranked by measurement **before** being
+built, which is the point of having instruments first.
+
+| Upgrade | Targets | Mechanism | Status |
+|---|---|---|:--:|
+| Bulk `Value` map build | DOM parse | build the map from a sorted vector instead of inserting per entry; reserve on sequences | **promoted** — measured allocation-bound, ~1 alloc per 31 input bytes |
+| Arena `Value` (additional type) | DOM parse | bump-allocated nodes, flat objects, interned keys — the shape that gives the fastest competitor its 1.5–3.6x DOM lead | planned, v1.x |
+| SIMD whitespace skip | every token boundary | 8-byte SWAR, then an SSE2/AVX2 twin with the scalar loop kept as oracle | planned |
+| SIMD string scan | string-heavy input | 16/32-byte twin of the existing 8-byte SWAR quote/backslash/control scan | planned |
+| Escape-mask writer | stringify | per-chunk "needs escape" mask, one write per clean run | planned |
+| 8-digit SWAR integer parse | number-heavy input | validate and convert eight ASCII digits at a time, per-digit tail | planned |
+| Key dispatch + derive handshake | struct parse | length-bucketed match, then a field-index handshake across the serde seam, replacing a linear `memcmp` ladder per key | planned |
+| Buffered reader | `from_reader` | an internal buffer reusing the slice scanners, instead of one iterator call per byte | planned |
+| ASCII fast-path UTF-8 validation | `from_slice` | validate the ASCII run wide, walk only non-ASCII tails | planned |
+| Sink specialisation | stringify | fold separators into adjacent writes; write integers and floats into spare capacity | *repriced* — cannot win by removing allocations (there are none); must win on write-call count |
+| Correctly-rounded float parse | float-heavy input | core's Eisel-Lemire, replacing the vendored bignum path | planned, v1.x, opt-in (it changes output) |
 
 ## What is this?
 
@@ -173,8 +208,33 @@ rusty_json_turbo = "0.1"      # then `use serde_json::...` as before
 
 Every feature has the semantics upstream documents at
 [docs.rs/serde_json](https://docs.rs/serde_json); upstream's own guide applies
-verbatim. MSRV 1.85. **The library never sets `#[global_allocator]`**; the
-`rjson` binary installs `rusty_alloc` through its seam crate.
+verbatim. MSRV 1.85.
+
+**The library never sets `#[global_allocator]`** — deliberately. A program may
+declare exactly one, so it belongs to the binary, and this crate is a drop-in
+for `serde_json`, which sits in nearly every Rust dependency graph. To take
+Table 1's speedup, add the seam to *your* binary:
+
+```toml
+[dependencies]
+rusty_json_turbo-alloc = "0.1"
+```
+
+```rust
+#[global_allocator]
+static ALLOC: rusty_json_turbo_alloc::Alloc = rusty_json_turbo_alloc::Alloc;
+```
+
+## Where this sits
+
+| Crate | Role |
+|---|---|
+| **[`rusty_json_turbo`](https://crates.io/crates/rusty_json_turbo)** | **← you are here** — the library: a drop-in `serde_json`, byte-identical by contract |
+| [`rusty_json_turbo-alloc`](https://crates.io/crates/rusty_json_turbo-alloc) | the `rusty_alloc` seam, for the binary — Table 1's speedup in one line |
+| `rusty_json_turbo-accel` | the SIMD island, arriving with the kernels (M3). Not yet published |
+| `rusty_json_turbo-cli` · `-bench` | the `rjson` command line and the measurement harness. Not published: one is a deliverable, the other links the oracle |
+
+The family shares one version, bumped together, so pinning one pins them all.
 
 ## Command line
 

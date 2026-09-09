@@ -16,21 +16,18 @@
 
 [package]
 name = "rusty_json_turbo"
-version = "0.1.0"
-authors = [
-    "Mata Network <https://www.mata.network>",
-    "Erick Tryzelaar <erick.tryzelaar@gmail.com>",
-    "David Tolnay <dtolnay@gmail.com>",
-]
-categories = ["encoding", "parser-implementations", "no-std"]
-description = "serde_json forked and made fast the house way: same API, same bytes, faster. Tracks serde_json 1.0.151."
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+rust-version.workspace = true
+readme = "README.md"
 documentation = "https://docs.rs/rusty_json_turbo"
-edition = "2021"
-keywords = ["json", "serde", "serialization"]
-license = "MIT OR Apache-2.0"
-repository = "https://github.com/Remade-With-Rust/rusty_json_turbo"
-homepage = "https://www.mata.network/remade-with-rust"
-rust-version = "1.85"
+categories = ["encoding", "parser-implementations", "no-std"]
+keywords = ["json", "serde", "serialization", "parser", "no-std"]
+description = "serde_json, forked and made fast the house way: the same API, the same bytes out, the same errors at the same line and column -- gated byte-identical against upstream every commit. Pure Rust, no C, no *-sys. Tracks serde_json 1.0.151."
 exclude = [
     "/.github",
     "/corpus",
@@ -152,11 +149,17 @@ members = ["crates/*"]
 exclude = ["fuzz", "tests/crate"]
 
 [workspace.package]
+# One version across the family, bumped together, the way the sibling codec
+# workspaces do it: a consumer that pins one crate can pin them all.
 version = "0.1.0"
 edition = "2021"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/Remade-With-Rust/rusty_json_turbo"
-authors = ["Mata Network <https://www.mata.network>"]
+authors = [
+    "Mata Network <https://www.mata.network>",
+    "Erick Tryzelaar <erick.tryzelaar@gmail.com>",
+    "David Tolnay <dtolnay@gmail.com>",
+]
 homepage = "https://www.mata.network/remade-with-rust"
 rust-version = "1.85"
 
