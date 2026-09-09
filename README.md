@@ -22,8 +22,9 @@ public API the house ships.
 
 ## The headline
 
-**Status: M0 (scaffold and oracle).** There is no performance claim on this
-page yet, because there is no ledger row to back one. What exists today:
+**Status: M0 complete (scaffold, oracle, harness, baseline).** There is no
+performance claim on this page yet: at M0 the fork is upstream's code, and the
+ledger says so to within its floor. What exists today:
 
 - **The fork**, at serde_json 1.0.151 (`afdf6fc`), unchanged in behaviour.
   Every upstream test passes against it.
@@ -52,11 +53,15 @@ page yet, because there is no ledger row to back one. What exists today:
 
 ### Performance -- measured rather than asserted
 
-No number enters this README without a method line, and none has yet. The M0
-baseline (upstream against itself, ours against upstream, and the competitor
-arms) is recorded in [`corpus/LEDGER.md`](corpus/LEDGER.md) with its pin,
-pairs, window, null-arm floor and machine. When a brick lands, its row lands
-first.
+No number enters this README without a method line, and no *claim* has yet.
+The M0 baseline is in [`corpus/LEDGER.md`](corpus/LEDGER.md) with its pin,
+pairs, window, null-arm floor and machine: upstream against itself (the floor,
+medians within 2.3%), ours against upstream (identical source; one cell shows a
+3% link-layout bias, which is now that cell's floor), and ours against
+simd-json 0.18 and sonic-rs 0.5 on all twelve json-benchmark cells. Two honest
+readings from that table: upstream serde_json already beats simd-json on eleven
+of twelve cells under this method, and sonic-rs's 1.5-3.6x DOM-parse lead is
+its arena `Value`, not its scanner. When a brick lands, its row lands first.
 
 ## What is this?
 
@@ -183,7 +188,7 @@ target/release/rjson-bench diff-oracle path/to/*.json   # the gate, on your own 
 
 ## Roadmap
 
-- [ ] **M0** -- scaffold, oracle, harness, corpus, CI, admissible baseline in the ledger
+- [x] **M0** -- scaffold, oracle, harness, corpus, CI, admissible baseline in the ledger (2026-09-09)
 - [ ] **M1** -- instruments, S4 house payloads, fuzz targets, ceiling probes, ranked worklist
 - [ ] **M2** -- safe byte-identical bricks; core takes `forbid(unsafe_code)`
 - [ ] **M3** -- the `-accel` island: SSE2/AVX2 whitespace, string, escape and ASCII kernels

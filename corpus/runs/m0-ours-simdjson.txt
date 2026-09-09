@@ -1,0 +1,294 @@
+rjson-bench: ours vs simd-json | 12 cells | 20 pairs | 250 ms windows
+
+== twitter / dom-parse (646995 bytes)
+  pair  1 lead=ours     ours=   1864900 ns/iter (  86 it)  simd-json=    909000 ns/iter ( 149 it)  a/b=2.052
+  pair  2 lead=simd-json ours=   1403300 ns/iter ( 118 it)  simd-json=    863700 ns/iter ( 210 it)  a/b=1.625
+  pair  3 lead=ours     ours=   1411400 ns/iter ( 126 it)  simd-json=    828800 ns/iter ( 204 it)  a/b=1.703
+  pair  4 lead=simd-json ours=   1394300 ns/iter ( 130 it)  simd-json=    831300 ns/iter ( 228 it)  a/b=1.677
+  pair  5 lead=ours     ours=   1390000 ns/iter ( 127 it)  simd-json=    863200 ns/iter ( 219 it)  a/b=1.610
+  pair  6 lead=simd-json ours=   1449900 ns/iter ( 122 it)  simd-json=    877900 ns/iter ( 220 it)  a/b=1.652
+  pair  7 lead=ours     ours=   1449400 ns/iter ( 114 it)  simd-json=    886100 ns/iter ( 210 it)  a/b=1.636
+  pair  8 lead=simd-json ours=   1414600 ns/iter ( 121 it)  simd-json=    851000 ns/iter ( 218 it)  a/b=1.662
+  pair  9 lead=ours     ours=   1389900 ns/iter ( 126 it)  simd-json=    842500 ns/iter ( 218 it)  a/b=1.650
+  pair 10 lead=simd-json ours=   1387400 ns/iter ( 122 it)  simd-json=    866800 ns/iter ( 220 it)  a/b=1.601
+  pair 11 lead=ours     ours=   1444900 ns/iter ( 114 it)  simd-json=    888500 ns/iter ( 211 it)  a/b=1.626
+  pair 12 lead=simd-json ours=   1382100 ns/iter ( 114 it)  simd-json=    892400 ns/iter ( 214 it)  a/b=1.549
+  pair 13 lead=ours     ours=   1357400 ns/iter ( 123 it)  simd-json=    849000 ns/iter ( 221 it)  a/b=1.599
+  pair 14 lead=simd-json ours=   1364600 ns/iter ( 133 it)  simd-json=    836900 ns/iter ( 227 it)  a/b=1.631
+  pair 15 lead=ours     ours=   1436800 ns/iter ( 112 it)  simd-json=    896700 ns/iter ( 209 it)  a/b=1.602
+  pair 16 lead=simd-json ours=   1554300 ns/iter (  84 it)  simd-json=    923900 ns/iter ( 137 it)  a/b=1.682
+  pair 17 lead=ours     ours=   1521300 ns/iter (  82 it)  simd-json=    852200 ns/iter ( 192 it)  a/b=1.785
+  pair 18 lead=simd-json ours=   1406100 ns/iter ( 111 it)  simd-json=    873100 ns/iter ( 218 it)  a/b=1.610
+  pair 19 lead=ours     ours=   1375900 ns/iter ( 122 it)  simd-json=    870800 ns/iter ( 202 it)  a/b=1.580
+  pair 20 lead=simd-json ours=   1415300 ns/iter ( 118 it)  simd-json=    884200 ns/iter ( 191 it)  a/b=1.601
+  => median a/b 1.628 [1.549, 2.052]  wins 0/20  z -4.47  ours 458 MB/s  simd-json 743 MB/s
+
+== twitter / dom-stringify (646995 bytes)
+  pair  1 lead=ours     ours=    267700 ns/iter ( 730 it)  simd-json=    359700 ns/iter ( 549 it)  a/b=0.744
+  pair  2 lead=simd-json ours=    279700 ns/iter ( 743 it)  simd-json=    356000 ns/iter ( 638 it)  a/b=0.786
+  pair  3 lead=ours     ours=    282700 ns/iter ( 782 it)  simd-json=    350900 ns/iter ( 516 it)  a/b=0.806
+  pair  4 lead=simd-json ours=    280000 ns/iter ( 820 it)  simd-json=    350700 ns/iter ( 640 it)  a/b=0.798
+  pair  5 lead=ours     ours=    277100 ns/iter ( 782 it)  simd-json=    350900 ns/iter ( 616 it)  a/b=0.790
+  pair  6 lead=simd-json ours=    279100 ns/iter ( 783 it)  simd-json=    342300 ns/iter ( 621 it)  a/b=0.815
+  pair  7 lead=ours     ours=    281900 ns/iter ( 760 it)  simd-json=    348600 ns/iter ( 672 it)  a/b=0.809
+  pair  8 lead=simd-json ours=    284800 ns/iter ( 764 it)  simd-json=    343200 ns/iter ( 609 it)  a/b=0.830
+  pair  9 lead=ours     ours=    280800 ns/iter ( 763 it)  simd-json=    362000 ns/iter ( 564 it)  a/b=0.776
+  pair 10 lead=simd-json ours=    283400 ns/iter ( 745 it)  simd-json=    353400 ns/iter ( 653 it)  a/b=0.802
+  pair 11 lead=ours     ours=    281700 ns/iter ( 792 it)  simd-json=    350800 ns/iter ( 573 it)  a/b=0.803
+  pair 12 lead=simd-json ours=    281500 ns/iter ( 738 it)  simd-json=    353500 ns/iter ( 587 it)  a/b=0.796
+  pair 13 lead=ours     ours=    271900 ns/iter ( 831 it)  simd-json=    345200 ns/iter ( 675 it)  a/b=0.788
+  pair 14 lead=simd-json ours=    275700 ns/iter ( 730 it)  simd-json=    345000 ns/iter ( 668 it)  a/b=0.799
+  pair 15 lead=ours     ours=    282500 ns/iter ( 612 it)  simd-json=    341900 ns/iter ( 605 it)  a/b=0.826
+  pair 16 lead=simd-json ours=    286700 ns/iter ( 685 it)  simd-json=    325000 ns/iter ( 683 it)  a/b=0.882
+  pair 17 lead=ours     ours=    282600 ns/iter ( 793 it)  simd-json=    352800 ns/iter ( 614 it)  a/b=0.801
+  pair 18 lead=simd-json ours=    274100 ns/iter ( 647 it)  simd-json=    336900 ns/iter ( 579 it)  a/b=0.814
+  pair 19 lead=ours     ours=    296600 ns/iter ( 638 it)  simd-json=    363400 ns/iter ( 540 it)  a/b=0.816
+  pair 20 lead=simd-json ours=    289000 ns/iter ( 748 it)  simd-json=    351900 ns/iter ( 621 it)  a/b=0.821
+  => median a/b 0.802 [0.744, 0.882]  wins 20/20  z +4.47  ours 1657 MB/s  simd-json 1331 MB/s
+
+== twitter / struct-parse (646995 bytes)
+  pair  1 lead=ours     ours=    791500 ns/iter ( 196 it)  simd-json=    755400 ns/iter ( 220 it)  a/b=1.048
+  pair  2 lead=simd-json ours=    742000 ns/iter ( 283 it)  simd-json=    760400 ns/iter ( 250 it)  a/b=0.976
+  pair  3 lead=ours     ours=    741800 ns/iter ( 268 it)  simd-json=    705400 ns/iter ( 256 it)  a/b=1.052
+  pair  4 lead=simd-json ours=    705300 ns/iter ( 305 it)  simd-json=    744000 ns/iter ( 229 it)  a/b=0.948
+  pair  5 lead=ours     ours=    709500 ns/iter ( 276 it)  simd-json=    741300 ns/iter ( 231 it)  a/b=0.957
+  pair  6 lead=simd-json ours=    709000 ns/iter ( 308 it)  simd-json=    702000 ns/iter ( 286 it)  a/b=1.010
+  pair  7 lead=ours     ours=    710400 ns/iter ( 288 it)  simd-json=    793200 ns/iter ( 253 it)  a/b=0.896
+  pair  8 lead=simd-json ours=    718300 ns/iter ( 271 it)  simd-json=    803200 ns/iter ( 255 it)  a/b=0.894
+  pair  9 lead=ours     ours=    738600 ns/iter ( 255 it)  simd-json=    792800 ns/iter ( 209 it)  a/b=0.932
+  pair 10 lead=simd-json ours=    732800 ns/iter ( 290 it)  simd-json=    779400 ns/iter ( 276 it)  a/b=0.940
+  pair 11 lead=ours     ours=    721200 ns/iter ( 299 it)  simd-json=    757000 ns/iter ( 284 it)  a/b=0.953
+  pair 12 lead=simd-json ours=    723200 ns/iter ( 287 it)  simd-json=    741000 ns/iter ( 284 it)  a/b=0.976
+  pair 13 lead=ours     ours=    708900 ns/iter ( 255 it)  simd-json=    764100 ns/iter ( 274 it)  a/b=0.928
+  pair 14 lead=simd-json ours=    704400 ns/iter ( 311 it)  simd-json=    771600 ns/iter ( 270 it)  a/b=0.913
+  pair 15 lead=ours     ours=    697800 ns/iter ( 290 it)  simd-json=    765800 ns/iter ( 268 it)  a/b=0.911
+  pair 16 lead=simd-json ours=    702800 ns/iter ( 314 it)  simd-json=    745300 ns/iter ( 280 it)  a/b=0.943
+  pair 17 lead=ours     ours=    695500 ns/iter ( 282 it)  simd-json=    796100 ns/iter ( 248 it)  a/b=0.874
+  pair 18 lead=simd-json ours=    733100 ns/iter ( 301 it)  simd-json=    772600 ns/iter ( 279 it)  a/b=0.949
+  pair 19 lead=ours     ours=    708900 ns/iter ( 272 it)  simd-json=    771400 ns/iter ( 275 it)  a/b=0.919
+  pair 20 lead=simd-json ours=    706600 ns/iter ( 305 it)  simd-json=    778700 ns/iter ( 270 it)  a/b=0.907
+  => median a/b 0.942 [0.874, 1.052]  wins 17/20  z +3.13  ours 911 MB/s  simd-json 845 MB/s
+
+== twitter / struct-stringify (646995 bytes)
+  pair  1 lead=ours     ours=    251900 ns/iter ( 897 it)  simd-json=    271200 ns/iter ( 847 it)  a/b=0.929
+  pair  2 lead=simd-json ours=    252400 ns/iter ( 901 it)  simd-json=    263200 ns/iter ( 851 it)  a/b=0.959
+  pair  3 lead=ours     ours=    251700 ns/iter ( 897 it)  simd-json=    272000 ns/iter ( 803 it)  a/b=0.925
+  pair  4 lead=simd-json ours=    254200 ns/iter ( 869 it)  simd-json=    250400 ns/iter ( 844 it)  a/b=1.015
+  pair  5 lead=ours     ours=    255800 ns/iter ( 860 it)  simd-json=    273000 ns/iter ( 832 it)  a/b=0.937
+  pair  6 lead=simd-json ours=    259100 ns/iter ( 860 it)  simd-json=    268900 ns/iter ( 839 it)  a/b=0.964
+  pair  7 lead=ours     ours=    252300 ns/iter ( 914 it)  simd-json=    268100 ns/iter ( 819 it)  a/b=0.941
+  pair  8 lead=simd-json ours=    252800 ns/iter ( 898 it)  simd-json=    264100 ns/iter ( 808 it)  a/b=0.957
+  pair  9 lead=ours     ours=    236900 ns/iter ( 903 it)  simd-json=    266000 ns/iter ( 845 it)  a/b=0.891
+  pair 10 lead=simd-json ours=    243000 ns/iter ( 835 it)  simd-json=    271200 ns/iter ( 833 it)  a/b=0.896
+  pair 11 lead=ours     ours=    249800 ns/iter ( 907 it)  simd-json=    270800 ns/iter ( 815 it)  a/b=0.922
+  pair 12 lead=simd-json ours=    253500 ns/iter ( 898 it)  simd-json=    251600 ns/iter ( 798 it)  a/b=1.008
+  pair 13 lead=ours     ours=    240900 ns/iter ( 909 it)  simd-json=    268900 ns/iter ( 859 it)  a/b=0.896
+  pair 14 lead=simd-json ours=    252800 ns/iter ( 881 it)  simd-json=    258900 ns/iter ( 851 it)  a/b=0.976
+  pair 15 lead=ours     ours=    253800 ns/iter ( 836 it)  simd-json=    265400 ns/iter ( 832 it)  a/b=0.956
+  pair 16 lead=simd-json ours=    252500 ns/iter ( 892 it)  simd-json=    255700 ns/iter ( 860 it)  a/b=0.987
+  pair 17 lead=ours     ours=    249600 ns/iter ( 883 it)  simd-json=    272000 ns/iter ( 839 it)  a/b=0.918
+  pair 18 lead=simd-json ours=    252800 ns/iter ( 888 it)  simd-json=    264100 ns/iter ( 821 it)  a/b=0.957
+  pair 19 lead=ours     ours=    250700 ns/iter ( 879 it)  simd-json=    265100 ns/iter ( 844 it)  a/b=0.946
+  pair 20 lead=simd-json ours=    258700 ns/iter ( 819 it)  simd-json=    261200 ns/iter ( 850 it)  a/b=0.990
+  => median a/b 0.951 [0.891, 1.015]  wins 18/20  z +3.58  ours 1892 MB/s  simd-json 1796 MB/s
+
+== citm_catalog / dom-parse (1777672 bytes)
+  pair  1 lead=ours     ours=   2501400 ns/iter (  64 it)  simd-json=   2572200 ns/iter (  71 it)  a/b=0.972
+  pair  2 lead=simd-json ours=   2484700 ns/iter (  61 it)  simd-json=   2526300 ns/iter (  75 it)  a/b=0.984
+  pair  3 lead=ours     ours=   2552000 ns/iter (  64 it)  simd-json=   2501200 ns/iter (  73 it)  a/b=1.020
+  pair  4 lead=simd-json ours=   2418100 ns/iter (  65 it)  simd-json=   2479700 ns/iter (  76 it)  a/b=0.975
+  pair  5 lead=ours     ours=   2405600 ns/iter (  70 it)  simd-json=   2513400 ns/iter (  75 it)  a/b=0.957
+  pair  6 lead=simd-json ours=   2491600 ns/iter (  68 it)  simd-json=   2527300 ns/iter (  74 it)  a/b=0.986
+  pair  7 lead=ours     ours=   2406200 ns/iter (  70 it)  simd-json=   2497100 ns/iter (  73 it)  a/b=0.964
+  pair  8 lead=simd-json ours=   2458400 ns/iter (  71 it)  simd-json=   2507200 ns/iter (  73 it)  a/b=0.981
+  pair  9 lead=ours     ours=   2479400 ns/iter (  67 it)  simd-json=   2492800 ns/iter (  72 it)  a/b=0.995
+  pair 10 lead=simd-json ours=   2498900 ns/iter (  69 it)  simd-json=   2476100 ns/iter (  68 it)  a/b=1.009
+  pair 11 lead=ours     ours=   2452900 ns/iter (  72 it)  simd-json=   2466200 ns/iter (  73 it)  a/b=0.995
+  pair 12 lead=simd-json ours=   2484200 ns/iter (  69 it)  simd-json=   2528800 ns/iter (  75 it)  a/b=0.982
+  pair 13 lead=ours     ours=   2457600 ns/iter (  70 it)  simd-json=   2518600 ns/iter (  74 it)  a/b=0.976
+  pair 14 lead=simd-json ours=   2522900 ns/iter (  59 it)  simd-json=   2565600 ns/iter (  74 it)  a/b=0.983
+  pair 15 lead=ours     ours=   2521900 ns/iter (  58 it)  simd-json=   2513900 ns/iter (  72 it)  a/b=1.003
+  pair 16 lead=simd-json ours=   2476600 ns/iter (  68 it)  simd-json=   2553700 ns/iter (  74 it)  a/b=0.970
+  pair 17 lead=ours     ours=   2503200 ns/iter (  70 it)  simd-json=   2472200 ns/iter (  74 it)  a/b=1.013
+  pair 18 lead=simd-json ours=   2461600 ns/iter (  70 it)  simd-json=   2530400 ns/iter (  74 it)  a/b=0.973
+  pair 19 lead=ours     ours=   2495100 ns/iter (  69 it)  simd-json=   2510900 ns/iter (  75 it)  a/b=0.994
+  pair 20 lead=simd-json ours=   2506000 ns/iter (  67 it)  simd-json=   2516400 ns/iter (  75 it)  a/b=0.996
+  => median a/b 0.983 [0.957, 1.020]  wins 16/20  z +2.68  ours 715 MB/s  simd-json 707 MB/s
+
+== citm_catalog / dom-stringify (1777672 bytes)
+  pair  1 lead=ours     ours=    392500 ns/iter ( 558 it)  simd-json=    413100 ns/iter ( 552 it)  a/b=0.950
+  pair  2 lead=simd-json ours=    405300 ns/iter ( 570 it)  simd-json=    416300 ns/iter ( 550 it)  a/b=0.974
+  pair  3 lead=ours     ours=    393800 ns/iter ( 568 it)  simd-json=    417800 ns/iter ( 505 it)  a/b=0.943
+  pair  4 lead=simd-json ours=    406100 ns/iter ( 572 it)  simd-json=    409400 ns/iter ( 557 it)  a/b=0.992
+  pair  5 lead=ours     ours=    408200 ns/iter ( 559 it)  simd-json=    408200 ns/iter ( 559 it)  a/b=1.000
+  pair  6 lead=simd-json ours=    406500 ns/iter ( 573 it)  simd-json=    398700 ns/iter ( 543 it)  a/b=1.020
+  pair  7 lead=ours     ours=    396600 ns/iter ( 571 it)  simd-json=    414000 ns/iter ( 557 it)  a/b=0.958
+  pair  8 lead=simd-json ours=    416200 ns/iter ( 560 it)  simd-json=    400300 ns/iter ( 551 it)  a/b=1.040
+  pair  9 lead=ours     ours=    412700 ns/iter ( 542 it)  simd-json=    426400 ns/iter ( 555 it)  a/b=0.968
+  pair 10 lead=simd-json ours=    415200 ns/iter ( 522 it)  simd-json=    408500 ns/iter ( 552 it)  a/b=1.016
+  pair 11 lead=ours     ours=    399500 ns/iter ( 542 it)  simd-json=    426800 ns/iter ( 550 it)  a/b=0.936
+  pair 12 lead=simd-json ours=    415700 ns/iter ( 535 it)  simd-json=    428800 ns/iter ( 529 it)  a/b=0.969
+  pair 13 lead=ours     ours=    434300 ns/iter ( 472 it)  simd-json=    426700 ns/iter ( 533 it)  a/b=1.018
+  pair 14 lead=simd-json ours=    422300 ns/iter ( 484 it)  simd-json=    419000 ns/iter ( 498 it)  a/b=1.008
+  pair 15 lead=ours     ours=    415200 ns/iter ( 414 it)  simd-json=    416200 ns/iter ( 525 it)  a/b=0.998
+  pair 16 lead=simd-json ours=    414100 ns/iter ( 548 it)  simd-json=    424100 ns/iter ( 492 it)  a/b=0.976
+  pair 17 lead=ours     ours=    397400 ns/iter ( 560 it)  simd-json=    429400 ns/iter ( 519 it)  a/b=0.925
+  pair 18 lead=simd-json ours=    417200 ns/iter ( 540 it)  simd-json=    417700 ns/iter ( 543 it)  a/b=0.999
+  pair 19 lead=ours     ours=    431700 ns/iter ( 471 it)  simd-json=    399200 ns/iter ( 512 it)  a/b=1.081
+  pair 20 lead=simd-json ours=    418100 ns/iter ( 509 it)  simd-json=    412000 ns/iter ( 435 it)  a/b=1.015
+  => median a/b 0.995 [0.925, 1.081]  wins 12/20  z +0.89  ours 1208 MB/s  simd-json 1202 MB/s
+
+== citm_catalog / struct-parse (1777672 bytes)
+  pair  1 lead=ours     ours=   1306800 ns/iter ( 172 it)  simd-json=   1545800 ns/iter ( 140 it)  a/b=0.845
+  pair  2 lead=simd-json ours=   1291500 ns/iter ( 167 it)  simd-json=   1551500 ns/iter ( 143 it)  a/b=0.832
+  pair  3 lead=ours     ours=   1343600 ns/iter ( 146 it)  simd-json=   1604900 ns/iter ( 109 it)  a/b=0.837
+  pair  4 lead=simd-json ours=   1287000 ns/iter ( 159 it)  simd-json=   1640000 ns/iter ( 115 it)  a/b=0.785
+  pair  5 lead=ours     ours=   1299400 ns/iter ( 177 it)  simd-json=   1543700 ns/iter ( 135 it)  a/b=0.842
+  pair  6 lead=simd-json ours=   1237500 ns/iter ( 135 it)  simd-json=   1544700 ns/iter ( 133 it)  a/b=0.801
+  pair  7 lead=ours     ours=   1225200 ns/iter ( 172 it)  simd-json=   1465300 ns/iter ( 147 it)  a/b=0.836
+  pair  8 lead=simd-json ours=   1284300 ns/iter ( 170 it)  simd-json=   1508700 ns/iter ( 145 it)  a/b=0.851
+  pair  9 lead=ours     ours=   1326800 ns/iter ( 157 it)  simd-json=   1577400 ns/iter ( 128 it)  a/b=0.841
+  pair 10 lead=simd-json ours=   1339000 ns/iter ( 166 it)  simd-json=   1576500 ns/iter ( 125 it)  a/b=0.849
+  pair 11 lead=ours     ours=   1340700 ns/iter ( 167 it)  simd-json=   1553900 ns/iter ( 132 it)  a/b=0.863
+  pair 12 lead=simd-json ours=   1305900 ns/iter ( 166 it)  simd-json=   1527000 ns/iter ( 138 it)  a/b=0.855
+  pair 13 lead=ours     ours=   1316900 ns/iter ( 133 it)  simd-json=   1604600 ns/iter ( 120 it)  a/b=0.821
+  pair 14 lead=simd-json ours=   1326600 ns/iter ( 128 it)  simd-json=   1544500 ns/iter ( 127 it)  a/b=0.859
+  pair 15 lead=ours     ours=   1361100 ns/iter ( 154 it)  simd-json=   1449700 ns/iter ( 123 it)  a/b=0.939
+  pair 16 lead=simd-json ours=   1281900 ns/iter ( 165 it)  simd-json=   1550200 ns/iter ( 135 it)  a/b=0.827
+  pair 17 lead=ours     ours=   1336300 ns/iter ( 134 it)  simd-json=   1616300 ns/iter ( 118 it)  a/b=0.827
+  pair 18 lead=simd-json ours=   1352800 ns/iter ( 160 it)  simd-json=   1457300 ns/iter ( 137 it)  a/b=0.928
+  pair 19 lead=ours     ours=   1297000 ns/iter ( 162 it)  simd-json=   1371100 ns/iter ( 144 it)  a/b=0.946
+  pair 20 lead=simd-json ours=   1250200 ns/iter ( 174 it)  simd-json=   1359300 ns/iter ( 135 it)  a/b=0.920
+  => median a/b 0.844 [0.785, 0.946]  wins 20/20  z +4.47  ours 1360 MB/s  simd-json 1150 MB/s
+
+== citm_catalog / struct-stringify (1777672 bytes)
+  pair  1 lead=ours     ours=    243700 ns/iter ( 927 it)  simd-json=    303400 ns/iter ( 689 it)  a/b=0.803
+  pair  2 lead=simd-json ours=    249500 ns/iter ( 927 it)  simd-json=    315600 ns/iter ( 683 it)  a/b=0.791
+  pair  3 lead=ours     ours=    243800 ns/iter ( 936 it)  simd-json=    310000 ns/iter ( 690 it)  a/b=0.786
+  pair  4 lead=simd-json ours=    245600 ns/iter ( 888 it)  simd-json=    304200 ns/iter ( 677 it)  a/b=0.807
+  pair  5 lead=ours     ours=    240100 ns/iter ( 946 it)  simd-json=    308300 ns/iter ( 702 it)  a/b=0.779
+  pair  6 lead=simd-json ours=    243100 ns/iter ( 942 it)  simd-json=    308700 ns/iter ( 741 it)  a/b=0.787
+  pair  7 lead=ours     ours=    240200 ns/iter ( 931 it)  simd-json=    307500 ns/iter ( 724 it)  a/b=0.781
+  pair  8 lead=simd-json ours=    245500 ns/iter ( 946 it)  simd-json=    295100 ns/iter ( 722 it)  a/b=0.832
+  pair  9 lead=ours     ours=    245600 ns/iter ( 941 it)  simd-json=    314500 ns/iter ( 728 it)  a/b=0.781
+  pair 10 lead=simd-json ours=    243800 ns/iter ( 925 it)  simd-json=    312100 ns/iter ( 734 it)  a/b=0.781
+  pair 11 lead=ours     ours=    229000 ns/iter ( 939 it)  simd-json=    315200 ns/iter ( 707 it)  a/b=0.727
+  pair 12 lead=simd-json ours=    245000 ns/iter ( 899 it)  simd-json=    303600 ns/iter ( 728 it)  a/b=0.807
+  pair 13 lead=ours     ours=    244500 ns/iter ( 818 it)  simd-json=    309000 ns/iter ( 683 it)  a/b=0.791
+  pair 14 lead=simd-json ours=    243400 ns/iter ( 827 it)  simd-json=    299500 ns/iter ( 684 it)  a/b=0.813
+  pair 15 lead=ours     ours=    243200 ns/iter ( 961 it)  simd-json=    314300 ns/iter ( 700 it)  a/b=0.774
+  pair 16 lead=simd-json ours=    251900 ns/iter ( 930 it)  simd-json=    295900 ns/iter ( 732 it)  a/b=0.851
+  pair 17 lead=ours     ours=    243300 ns/iter ( 873 it)  simd-json=    320900 ns/iter ( 722 it)  a/b=0.758
+  pair 18 lead=simd-json ours=    251700 ns/iter ( 890 it)  simd-json=    316800 ns/iter ( 716 it)  a/b=0.795
+  pair 19 lead=ours     ours=    251000 ns/iter ( 937 it)  simd-json=    322800 ns/iter ( 685 it)  a/b=0.778
+  pair 20 lead=simd-json ours=    250200 ns/iter ( 930 it)  simd-json=    320800 ns/iter ( 695 it)  a/b=0.780
+  => median a/b 0.787 [0.727, 0.851]  wins 20/20  z +4.47  ours 2046 MB/s  simd-json 1614 MB/s
+
+== canada / dom-parse (2251060 bytes)
+  pair  1 lead=ours     ours=   5940600 ns/iter (  33 it)  simd-json=   6957400 ns/iter (  26 it)  a/b=0.854
+  pair  2 lead=simd-json ours=   5604800 ns/iter (  35 it)  simd-json=   6869600 ns/iter (  23 it)  a/b=0.816
+  pair  3 lead=ours     ours=   5520900 ns/iter (  35 it)  simd-json=   6833300 ns/iter (  27 it)  a/b=0.808
+  pair  4 lead=simd-json ours=   5575300 ns/iter (  33 it)  simd-json=   6957200 ns/iter (  27 it)  a/b=0.801
+  pair  5 lead=ours     ours=   5478000 ns/iter (  36 it)  simd-json=   6886900 ns/iter (  28 it)  a/b=0.795
+  pair  6 lead=simd-json ours=   5515900 ns/iter (  35 it)  simd-json=   6997300 ns/iter (  27 it)  a/b=0.788
+  pair  7 lead=ours     ours=   5565700 ns/iter (  36 it)  simd-json=   7044700 ns/iter (  27 it)  a/b=0.790
+  pair  8 lead=simd-json ours=   6001100 ns/iter (  27 it)  simd-json=   6836800 ns/iter (  26 it)  a/b=0.878
+  pair  9 lead=ours     ours=   5513800 ns/iter (  35 it)  simd-json=   6892400 ns/iter (  23 it)  a/b=0.800
+  pair 10 lead=simd-json ours=   5662300 ns/iter (  32 it)  simd-json=   6969700 ns/iter (  25 it)  a/b=0.812
+  pair 11 lead=ours     ours=   5586400 ns/iter (  35 it)  simd-json=   7057700 ns/iter (  27 it)  a/b=0.792
+  pair 12 lead=simd-json ours=   5548100 ns/iter (  35 it)  simd-json=   6947600 ns/iter (  26 it)  a/b=0.799
+  pair 13 lead=ours     ours=   6020400 ns/iter (  30 it)  simd-json=   6896700 ns/iter (  26 it)  a/b=0.873
+  pair 14 lead=simd-json ours=   5590800 ns/iter (  35 it)  simd-json=   7062700 ns/iter (  27 it)  a/b=0.792
+  pair 15 lead=ours     ours=   5456300 ns/iter (  31 it)  simd-json=   6862900 ns/iter (  26 it)  a/b=0.795
+  pair 16 lead=simd-json ours=   5615600 ns/iter (  35 it)  simd-json=   6899200 ns/iter (  28 it)  a/b=0.814
+  pair 17 lead=ours     ours=   5294700 ns/iter (  34 it)  simd-json=   6853300 ns/iter (  27 it)  a/b=0.773
+  pair 18 lead=simd-json ours=   5501300 ns/iter (  35 it)  simd-json=   6936400 ns/iter (  27 it)  a/b=0.793
+  pair 19 lead=ours     ours=   5591600 ns/iter (  36 it)  simd-json=   6956900 ns/iter (  25 it)  a/b=0.804
+  pair 20 lead=simd-json ours=   5433600 ns/iter (  33 it)  simd-json=   6686100 ns/iter (  26 it)  a/b=0.813
+  => median a/b 0.801 [0.773, 0.878]  wins 20/20  z +4.47  ours 404 MB/s  simd-json 325 MB/s
+
+== canada / dom-stringify (2251060 bytes)
+  pair  1 lead=ours     ours=   2118100 ns/iter ( 107 it)  simd-json=   2993300 ns/iter (  78 it)  a/b=0.708
+  pair  2 lead=simd-json ours=   2170400 ns/iter ( 107 it)  simd-json=   2999400 ns/iter (  77 it)  a/b=0.724
+  pair  3 lead=ours     ours=   2142100 ns/iter ( 102 it)  simd-json=   3085900 ns/iter (  77 it)  a/b=0.694
+  pair  4 lead=simd-json ours=   2108900 ns/iter ( 109 it)  simd-json=   2950000 ns/iter (  78 it)  a/b=0.715
+  pair  5 lead=ours     ours=   2131800 ns/iter ( 109 it)  simd-json=   2933300 ns/iter (  80 it)  a/b=0.727
+  pair  6 lead=simd-json ours=   2109000 ns/iter (  94 it)  simd-json=   2903300 ns/iter (  80 it)  a/b=0.726
+  pair  7 lead=ours     ours=   2099900 ns/iter ( 107 it)  simd-json=   3060800 ns/iter (  67 it)  a/b=0.686
+  pair  8 lead=simd-json ours=   2218800 ns/iter ( 104 it)  simd-json=   3063000 ns/iter (  76 it)  a/b=0.724
+  pair  9 lead=ours     ours=   2219000 ns/iter (  76 it)  simd-json=   3205000 ns/iter (  66 it)  a/b=0.692
+  pair 10 lead=simd-json ours=   2228500 ns/iter ( 100 it)  simd-json=   3036400 ns/iter (  74 it)  a/b=0.734
+  pair 11 lead=ours     ours=   2254700 ns/iter (  74 it)  simd-json=   2932300 ns/iter (  72 it)  a/b=0.769
+  pair 12 lead=simd-json ours=   2174100 ns/iter ( 109 it)  simd-json=   2967900 ns/iter (  77 it)  a/b=0.733
+  pair 13 lead=ours     ours=   2193800 ns/iter ( 105 it)  simd-json=   3026100 ns/iter (  69 it)  a/b=0.725
+  pair 14 lead=simd-json ours=   2228000 ns/iter (  85 it)  simd-json=   3122900 ns/iter (  75 it)  a/b=0.713
+  pair 15 lead=ours     ours=   2282900 ns/iter (  77 it)  simd-json=   3134800 ns/iter (  71 it)  a/b=0.728
+  pair 16 lead=simd-json ours=   2152500 ns/iter ( 100 it)  simd-json=   2993200 ns/iter (  76 it)  a/b=0.719
+  pair 17 lead=ours     ours=   2227400 ns/iter (  98 it)  simd-json=   3131700 ns/iter (  72 it)  a/b=0.711
+  pair 18 lead=simd-json ours=   2199200 ns/iter ( 105 it)  simd-json=   3054900 ns/iter (  78 it)  a/b=0.720
+  pair 19 lead=ours     ours=   2358200 ns/iter (  81 it)  simd-json=   2860200 ns/iter (  78 it)  a/b=0.824
+  pair 20 lead=simd-json ours=   2186700 ns/iter ( 101 it)  simd-json=   3133200 ns/iter (  73 it)  a/b=0.698
+  => median a/b 0.722 [0.686, 0.824]  wins 20/20  z +4.47  ours 941 MB/s  simd-json 680 MB/s
+
+== canada / struct-parse (2251060 bytes)
+  pair  1 lead=ours     ours=   3210600 ns/iter (  65 it)  simd-json=   4399400 ns/iter (  50 it)  a/b=0.730
+  pair  2 lead=simd-json ours=   3236000 ns/iter (  71 it)  simd-json=   4555200 ns/iter (  45 it)  a/b=0.710
+  pair  3 lead=ours     ours=   3255000 ns/iter (  69 it)  simd-json=   4402500 ns/iter (  50 it)  a/b=0.739
+  pair  4 lead=simd-json ours=   3144700 ns/iter (  73 it)  simd-json=   4413200 ns/iter (  49 it)  a/b=0.713
+  pair  5 lead=ours     ours=   3050000 ns/iter (  77 it)  simd-json=   4430500 ns/iter (  47 it)  a/b=0.688
+  pair  6 lead=simd-json ours=   3180200 ns/iter (  73 it)  simd-json=   4445500 ns/iter (  50 it)  a/b=0.715
+  pair  7 lead=ours     ours=   3093100 ns/iter (  76 it)  simd-json=   4261800 ns/iter (  50 it)  a/b=0.726
+  pair  8 lead=simd-json ours=   3235700 ns/iter (  71 it)  simd-json=   4348700 ns/iter (  44 it)  a/b=0.744
+  pair  9 lead=ours     ours=   3158300 ns/iter (  62 it)  simd-json=   4556600 ns/iter (  48 it)  a/b=0.693
+  pair 10 lead=simd-json ours=   3090800 ns/iter (  64 it)  simd-json=   4414900 ns/iter (  45 it)  a/b=0.700
+  pair 11 lead=ours     ours=   3071000 ns/iter (  71 it)  simd-json=   4291900 ns/iter (  52 it)  a/b=0.716
+  pair 12 lead=simd-json ours=   3145300 ns/iter (  75 it)  simd-json=   4457300 ns/iter (  51 it)  a/b=0.706
+  pair 13 lead=ours     ours=   3253900 ns/iter (  72 it)  simd-json=   4295900 ns/iter (  50 it)  a/b=0.757
+  pair 14 lead=simd-json ours=   3248200 ns/iter (  62 it)  simd-json=   4557800 ns/iter (  48 it)  a/b=0.713
+  pair 15 lead=ours     ours=   3067700 ns/iter (  75 it)  simd-json=   4615900 ns/iter (  48 it)  a/b=0.665
+  pair 16 lead=simd-json ours=   3323000 ns/iter (  68 it)  simd-json=   4493300 ns/iter (  49 it)  a/b=0.740
+  pair 17 lead=ours     ours=   3309900 ns/iter (  58 it)  simd-json=   4469900 ns/iter (  44 it)  a/b=0.740
+  pair 18 lead=simd-json ours=   3248900 ns/iter (  72 it)  simd-json=   4468300 ns/iter (  51 it)  a/b=0.727
+  pair 19 lead=ours     ours=   3170400 ns/iter (  74 it)  simd-json=   4357200 ns/iter (  51 it)  a/b=0.728
+  pair 20 lead=simd-json ours=   3123800 ns/iter (  74 it)  simd-json=   4241300 ns/iter (  51 it)  a/b=0.737
+  => median a/b 0.721 [0.665, 0.757]  wins 20/20  z +4.47  ours 708 MB/s  simd-json 508 MB/s
+
+== canada / struct-stringify (2251060 bytes)
+  pair  1 lead=ours     ours=   1844400 ns/iter ( 114 it)  simd-json=   2572500 ns/iter (  89 it)  a/b=0.717
+  pair  2 lead=simd-json ours=   1800500 ns/iter ( 117 it)  simd-json=   2559800 ns/iter (  93 it)  a/b=0.703
+  pair  3 lead=ours     ours=   1819400 ns/iter ( 118 it)  simd-json=   2585200 ns/iter (  91 it)  a/b=0.704
+  pair  4 lead=simd-json ours=   1871300 ns/iter ( 122 it)  simd-json=   2757500 ns/iter (  68 it)  a/b=0.679
+  pair  5 lead=ours     ours=   1899300 ns/iter ( 122 it)  simd-json=   2694800 ns/iter (  70 it)  a/b=0.705
+  pair  6 lead=simd-json ours=   1904100 ns/iter ( 102 it)  simd-json=   2740500 ns/iter (  69 it)  a/b=0.695
+  pair  7 lead=ours     ours=   1930300 ns/iter ( 110 it)  simd-json=   2792300 ns/iter (  74 it)  a/b=0.691
+  pair  8 lead=simd-json ours=   1856300 ns/iter ( 112 it)  simd-json=   2643600 ns/iter (  88 it)  a/b=0.702
+  pair  9 lead=ours     ours=   1944200 ns/iter ( 111 it)  simd-json=   2826800 ns/iter (  69 it)  a/b=0.688
+  pair 10 lead=simd-json ours=   1937000 ns/iter ( 118 it)  simd-json=   2827600 ns/iter (  73 it)  a/b=0.685
+  pair 11 lead=ours     ours=   1936200 ns/iter ( 111 it)  simd-json=   2592500 ns/iter (  86 it)  a/b=0.747
+  pair 12 lead=simd-json ours=   1885800 ns/iter ( 114 it)  simd-json=   2751400 ns/iter (  67 it)  a/b=0.685
+  pair 13 lead=ours     ours=   1945300 ns/iter ( 103 it)  simd-json=   2742600 ns/iter (  76 it)  a/b=0.709
+  pair 14 lead=simd-json ours=   1931000 ns/iter ( 103 it)  simd-json=   2734500 ns/iter (  76 it)  a/b=0.706
+  pair 15 lead=ours     ours=   1888400 ns/iter ( 124 it)  simd-json=   2819900 ns/iter (  75 it)  a/b=0.670
+  pair 16 lead=simd-json ours=   1958800 ns/iter ( 104 it)  simd-json=   2743400 ns/iter (  85 it)  a/b=0.714
+  pair 17 lead=ours     ours=   1937100 ns/iter ( 120 it)  simd-json=   2782400 ns/iter (  73 it)  a/b=0.696
+  pair 18 lead=simd-json ours=   1939200 ns/iter ( 110 it)  simd-json=   2822800 ns/iter (  75 it)  a/b=0.687
+  pair 19 lead=ours     ours=   1924300 ns/iter ( 118 it)  simd-json=   2766900 ns/iter (  86 it)  a/b=0.695
+  pair 20 lead=simd-json ours=   1902200 ns/iter ( 125 it)  simd-json=   2683000 ns/iter (  83 it)  a/b=0.709
+  => median a/b 0.699 [0.670, 0.747]  wins 20/20  z +4.47  ours 626 MB/s  simd-json 439 MB/s
+
+| file | column | ours | simd-json | ours/simd-json time (median [min, max]) | wins, z |
+|---|---|---:|---:|---:|---:|
+| twitter | dom-parse | ours **458 MB/s** | simd-json 743 MB/s | **1.628x** [1.549, 2.052] | 0/20, z = -4.47 |
+| twitter | dom-stringify | ours **1657 MB/s** | simd-json 1331 MB/s | **0.802x** [0.744, 0.882] | 20/20, z = +4.47 |
+| twitter | struct-parse | ours **911 MB/s** | simd-json 845 MB/s | **0.942x** [0.874, 1.052] | 17/20, z = +3.13 |
+| twitter | struct-stringify | ours **1892 MB/s** | simd-json 1796 MB/s | **0.951x** [0.891, 1.015] | 18/20, z = +3.58 |
+| citm_catalog | dom-parse | ours **715 MB/s** | simd-json 707 MB/s | **0.983x** [0.957, 1.020] | 16/20, z = +2.68 |
+| citm_catalog | dom-stringify | ours **1208 MB/s** | simd-json 1202 MB/s | **0.995x** [0.925, 1.081] | 12/20, z = +0.89 |
+| citm_catalog | struct-parse | ours **1360 MB/s** | simd-json 1150 MB/s | **0.844x** [0.785, 0.946] | 20/20, z = +4.47 |
+| citm_catalog | struct-stringify | ours **2046 MB/s** | simd-json 1614 MB/s | **0.787x** [0.727, 0.851] | 20/20, z = +4.47 |
+| canada | dom-parse | ours **404 MB/s** | simd-json 325 MB/s | **0.801x** [0.773, 0.878] | 20/20, z = +4.47 |
+| canada | dom-stringify | ours **941 MB/s** | simd-json 680 MB/s | **0.722x** [0.686, 0.824] | 20/20, z = +4.47 |
+| canada | struct-parse | ours **708 MB/s** | simd-json 508 MB/s | **0.721x** [0.665, 0.757] | 20/20, z = +4.47 |
+| canada | struct-stringify | ours **626 MB/s** | simd-json 439 MB/s | **0.699x** [0.670, 0.747] | 20/20, z = +4.47 |
+
+method: in-process paired A/B, one binary, both arms linked; lead alternated per pair (ABBA); pairs=20; window=250 ms per arm-sample, statistic=min per-iteration time in the window, verdict=median of paired ratios + paired wins with z; clock=std::time::Instant (QPC on Windows); pinned=cpu2/High; allocator=system (both arms; as-shipped rows are a separate table); isa=scalar (no kernels wired at M0); work parity: identical input bytes, output length asserted equal per pair for serde_json-shaped arms; stringify buffers pre-sized and cleared (growth excluded); competitors: simd-json input copy excluded from the timed region; machine=windows x86_64 ; commit=b3df966

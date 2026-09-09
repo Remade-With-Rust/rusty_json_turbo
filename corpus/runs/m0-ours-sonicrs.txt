@@ -1,0 +1,294 @@
+rjson-bench: ours vs sonic-rs | 12 cells | 20 pairs | 250 ms windows
+
+== twitter / dom-parse (646995 bytes)
+  pair  1 lead=ours     ours=   1808200 ns/iter (  84 it)  sonic-rs=    399500 ns/iter ( 360 it)  a/b=4.526
+  pair  2 lead=sonic-rs ours=   1399800 ns/iter (  97 it)  sonic-rs=    410800 ns/iter ( 438 it)  a/b=3.407
+  pair  3 lead=ours     ours=   1458900 ns/iter ( 115 it)  sonic-rs=    403600 ns/iter ( 544 it)  a/b=3.615
+  pair  4 lead=sonic-rs ours=   1428800 ns/iter ( 116 it)  sonic-rs=    402900 ns/iter ( 543 it)  a/b=3.546
+  pair  5 lead=ours     ours=   1443300 ns/iter ( 120 it)  sonic-rs=    401900 ns/iter ( 561 it)  a/b=3.591
+  pair  6 lead=sonic-rs ours=   1411800 ns/iter ( 127 it)  sonic-rs=    393300 ns/iter ( 546 it)  a/b=3.590
+  pair  7 lead=ours     ours=   1398100 ns/iter ( 126 it)  sonic-rs=    399600 ns/iter ( 552 it)  a/b=3.499
+  pair  8 lead=sonic-rs ours=   1499500 ns/iter ( 122 it)  sonic-rs=    402800 ns/iter ( 550 it)  a/b=3.723
+  pair  9 lead=ours     ours=   1457300 ns/iter ( 119 it)  sonic-rs=    410500 ns/iter ( 553 it)  a/b=3.550
+  pair 10 lead=sonic-rs ours=   1484200 ns/iter ( 103 it)  sonic-rs=    415100 ns/iter ( 491 it)  a/b=3.576
+  pair 11 lead=ours     ours=   1465000 ns/iter ( 113 it)  sonic-rs=    403200 ns/iter ( 519 it)  a/b=3.633
+  pair 12 lead=sonic-rs ours=   1388300 ns/iter ( 111 it)  sonic-rs=    422500 ns/iter ( 392 it)  a/b=3.286
+  pair 13 lead=ours     ours=   1467100 ns/iter ( 119 it)  sonic-rs=    404800 ns/iter ( 469 it)  a/b=3.624
+  pair 14 lead=sonic-rs ours=   1433100 ns/iter ( 124 it)  sonic-rs=    402200 ns/iter ( 543 it)  a/b=3.563
+  pair 15 lead=ours     ours=   1438700 ns/iter ( 124 it)  sonic-rs=    390800 ns/iter ( 524 it)  a/b=3.681
+  pair 16 lead=sonic-rs ours=   1439900 ns/iter ( 116 it)  sonic-rs=    398800 ns/iter ( 555 it)  a/b=3.611
+  pair 17 lead=ours     ours=   1454100 ns/iter ( 110 it)  sonic-rs=    393900 ns/iter ( 534 it)  a/b=3.692
+  pair 18 lead=sonic-rs ours=   1398900 ns/iter ( 104 it)  sonic-rs=    395200 ns/iter ( 538 it)  a/b=3.540
+  pair 19 lead=ours     ours=   1378300 ns/iter ( 119 it)  sonic-rs=    399600 ns/iter ( 527 it)  a/b=3.449
+  pair 20 lead=sonic-rs ours=   1424700 ns/iter ( 125 it)  sonic-rs=    399200 ns/iter ( 547 it)  a/b=3.569
+  => median a/b 3.583 [3.286, 4.526]  wins 0/20  z -4.47  ours 449 MB/s  sonic-rs 1609 MB/s
+
+== twitter / dom-stringify (646995 bytes)
+  pair  1 lead=ours     ours=    275300 ns/iter ( 794 it)  sonic-rs=    294000 ns/iter ( 780 it)  a/b=0.936
+  pair  2 lead=sonic-rs ours=    282400 ns/iter ( 756 it)  sonic-rs=    300900 ns/iter ( 772 it)  a/b=0.939
+  pair  3 lead=ours     ours=    279600 ns/iter ( 727 it)  sonic-rs=    301100 ns/iter ( 791 it)  a/b=0.929
+  pair  4 lead=sonic-rs ours=    281800 ns/iter ( 727 it)  sonic-rs=    300600 ns/iter ( 762 it)  a/b=0.937
+  pair  5 lead=ours     ours=    286000 ns/iter ( 743 it)  sonic-rs=    299800 ns/iter ( 779 it)  a/b=0.954
+  pair  6 lead=sonic-rs ours=    281300 ns/iter ( 810 it)  sonic-rs=    299700 ns/iter ( 751 it)  a/b=0.939
+  pair  7 lead=ours     ours=    273800 ns/iter ( 744 it)  sonic-rs=    300800 ns/iter ( 751 it)  a/b=0.910
+  pair  8 lead=sonic-rs ours=    279800 ns/iter ( 829 it)  sonic-rs=    300000 ns/iter ( 715 it)  a/b=0.933
+  pair  9 lead=ours     ours=    276400 ns/iter ( 774 it)  sonic-rs=    299500 ns/iter ( 776 it)  a/b=0.923
+  pair 10 lead=sonic-rs ours=    281300 ns/iter ( 762 it)  sonic-rs=    294500 ns/iter ( 777 it)  a/b=0.955
+  pair 11 lead=ours     ours=    275300 ns/iter ( 673 it)  sonic-rs=    300100 ns/iter ( 789 it)  a/b=0.917
+  pair 12 lead=sonic-rs ours=    280900 ns/iter ( 815 it)  sonic-rs=    300400 ns/iter ( 747 it)  a/b=0.935
+  pair 13 lead=ours     ours=    270200 ns/iter ( 822 it)  sonic-rs=    299800 ns/iter ( 778 it)  a/b=0.901
+  pair 14 lead=sonic-rs ours=    279700 ns/iter ( 822 it)  sonic-rs=    294400 ns/iter ( 764 it)  a/b=0.950
+  pair 15 lead=ours     ours=    281400 ns/iter ( 801 it)  sonic-rs=    301600 ns/iter ( 771 it)  a/b=0.933
+  pair 16 lead=sonic-rs ours=    287200 ns/iter ( 734 it)  sonic-rs=    293800 ns/iter ( 767 it)  a/b=0.978
+  pair 17 lead=ours     ours=    280600 ns/iter ( 743 it)  sonic-rs=    299700 ns/iter ( 764 it)  a/b=0.936
+  pair 18 lead=sonic-rs ours=    275700 ns/iter ( 798 it)  sonic-rs=    300400 ns/iter ( 741 it)  a/b=0.918
+  pair 19 lead=ours     ours=    275100 ns/iter ( 779 it)  sonic-rs=    293700 ns/iter ( 742 it)  a/b=0.937
+  pair 20 lead=sonic-rs ours=    273800 ns/iter ( 797 it)  sonic-rs=    293700 ns/iter ( 776 it)  a/b=0.932
+  => median a/b 0.936 [0.901, 0.978]  wins 20/20  z +4.47  ours 1669 MB/s  sonic-rs 1557 MB/s
+
+== twitter / struct-parse (646995 bytes)
+  pair  1 lead=ours     ours=    688000 ns/iter ( 307 it)  sonic-rs=    669500 ns/iter ( 307 it)  a/b=1.028
+  pair  2 lead=sonic-rs ours=    705700 ns/iter ( 292 it)  sonic-rs=    692300 ns/iter ( 306 it)  a/b=1.019
+  pair  3 lead=ours     ours=    711800 ns/iter ( 250 it)  sonic-rs=    693700 ns/iter ( 292 it)  a/b=1.026
+  pair  4 lead=sonic-rs ours=    723300 ns/iter ( 287 it)  sonic-rs=    700200 ns/iter ( 283 it)  a/b=1.033
+  pair  5 lead=ours     ours=    722700 ns/iter ( 252 it)  sonic-rs=    699500 ns/iter ( 312 it)  a/b=1.033
+  pair  6 lead=sonic-rs ours=    707500 ns/iter ( 301 it)  sonic-rs=    702000 ns/iter ( 300 it)  a/b=1.008
+  pair  7 lead=ours     ours=    710200 ns/iter ( 311 it)  sonic-rs=    685100 ns/iter ( 303 it)  a/b=1.037
+  pair  8 lead=sonic-rs ours=    707700 ns/iter ( 287 it)  sonic-rs=    675900 ns/iter ( 293 it)  a/b=1.047
+  pair  9 lead=ours     ours=    700800 ns/iter ( 276 it)  sonic-rs=    672500 ns/iter ( 242 it)  a/b=1.042
+  pair 10 lead=sonic-rs ours=    710700 ns/iter ( 305 it)  sonic-rs=    698300 ns/iter ( 285 it)  a/b=1.018
+  pair 11 lead=ours     ours=    691900 ns/iter ( 302 it)  sonic-rs=    669000 ns/iter ( 311 it)  a/b=1.034
+  pair 12 lead=sonic-rs ours=    722800 ns/iter ( 273 it)  sonic-rs=    687900 ns/iter ( 312 it)  a/b=1.051
+  pair 13 lead=ours     ours=    689400 ns/iter ( 308 it)  sonic-rs=    669700 ns/iter ( 322 it)  a/b=1.029
+  pair 14 lead=sonic-rs ours=    722700 ns/iter ( 300 it)  sonic-rs=    701300 ns/iter ( 301 it)  a/b=1.031
+  pair 15 lead=ours     ours=    724400 ns/iter ( 290 it)  sonic-rs=    702200 ns/iter ( 311 it)  a/b=1.032
+  pair 16 lead=sonic-rs ours=    711100 ns/iter ( 285 it)  sonic-rs=    699000 ns/iter ( 283 it)  a/b=1.017
+  pair 17 lead=ours     ours=    691100 ns/iter ( 301 it)  sonic-rs=    690200 ns/iter ( 311 it)  a/b=1.001
+  pair 18 lead=sonic-rs ours=    705800 ns/iter ( 301 it)  sonic-rs=    673800 ns/iter ( 301 it)  a/b=1.047
+  pair 19 lead=ours     ours=    706100 ns/iter ( 270 it)  sonic-rs=    675400 ns/iter ( 302 it)  a/b=1.045
+  pair 20 lead=sonic-rs ours=    677700 ns/iter ( 300 it)  sonic-rs=    670500 ns/iter ( 307 it)  a/b=1.011
+  => median a/b 1.031 [1.001, 1.051]  wins 0/20  z -4.47  ours 914 MB/s  sonic-rs 937 MB/s
+
+== twitter / struct-stringify (646995 bytes)
+  pair  1 lead=ours     ours=    260400 ns/iter ( 646 it)  sonic-rs=    268000 ns/iter ( 815 it)  a/b=0.972
+  pair  2 lead=sonic-rs ours=    261200 ns/iter ( 732 it)  sonic-rs=    274800 ns/iter ( 857 it)  a/b=0.951
+  pair  3 lead=ours     ours=    259400 ns/iter ( 846 it)  sonic-rs=    268100 ns/iter ( 859 it)  a/b=0.968
+  pair  4 lead=sonic-rs ours=    265500 ns/iter ( 784 it)  sonic-rs=    274600 ns/iter ( 852 it)  a/b=0.967
+  pair  5 lead=ours     ours=    259700 ns/iter ( 785 it)  sonic-rs=    267700 ns/iter ( 844 it)  a/b=0.970
+  pair  6 lead=sonic-rs ours=    265700 ns/iter ( 802 it)  sonic-rs=    268100 ns/iter ( 821 it)  a/b=0.991
+  pair  7 lead=ours     ours=    258700 ns/iter ( 866 it)  sonic-rs=    274200 ns/iter ( 846 it)  a/b=0.943
+  pair  8 lead=sonic-rs ours=    260600 ns/iter ( 852 it)  sonic-rs=    274800 ns/iter ( 859 it)  a/b=0.948
+  pair  9 lead=ours     ours=    260600 ns/iter ( 861 it)  sonic-rs=    280400 ns/iter ( 857 it)  a/b=0.929
+  pair 10 lead=sonic-rs ours=    256000 ns/iter ( 881 it)  sonic-rs=    268400 ns/iter ( 859 it)  a/b=0.954
+  pair 11 lead=ours     ours=    260300 ns/iter ( 859 it)  sonic-rs=    281100 ns/iter ( 849 it)  a/b=0.926
+  pair 12 lead=sonic-rs ours=    265500 ns/iter ( 844 it)  sonic-rs=    275600 ns/iter ( 840 it)  a/b=0.963
+  pair 13 lead=ours     ours=    266600 ns/iter ( 785 it)  sonic-rs=    280800 ns/iter ( 829 it)  a/b=0.949
+  pair 14 lead=sonic-rs ours=    265600 ns/iter ( 829 it)  sonic-rs=    281000 ns/iter ( 815 it)  a/b=0.945
+  pair 15 lead=ours     ours=    266800 ns/iter ( 806 it)  sonic-rs=    274500 ns/iter ( 855 it)  a/b=0.972
+  pair 16 lead=sonic-rs ours=    258700 ns/iter ( 844 it)  sonic-rs=    274100 ns/iter ( 850 it)  a/b=0.944
+  pair 17 lead=ours     ours=    259400 ns/iter ( 841 it)  sonic-rs=    268800 ns/iter ( 868 it)  a/b=0.965
+  pair 18 lead=sonic-rs ours=    260300 ns/iter ( 867 it)  sonic-rs=    270100 ns/iter ( 870 it)  a/b=0.964
+  pair 19 lead=ours     ours=    263700 ns/iter ( 851 it)  sonic-rs=    268500 ns/iter ( 814 it)  a/b=0.982
+  pair 20 lead=sonic-rs ours=    261100 ns/iter ( 812 it)  sonic-rs=    257200 ns/iter ( 822 it)  a/b=1.015
+  => median a/b 0.964 [0.926, 1.015]  wins 19/20  z +4.02  ours 1833 MB/s  sonic-rs 1742 MB/s
+
+== citm_catalog / dom-parse (1777672 bytes)
+  pair  1 lead=ours     ours=   2659200 ns/iter (  50 it)  sonic-rs=   1328200 ns/iter ( 145 it)  a/b=2.002
+  pair  2 lead=sonic-rs ours=   2678800 ns/iter (  49 it)  sonic-rs=   1323400 ns/iter ( 154 it)  a/b=2.024
+  pair  3 lead=ours     ours=   2812700 ns/iter (  40 it)  sonic-rs=   1331900 ns/iter ( 137 it)  a/b=2.112
+  pair  4 lead=sonic-rs ours=   2675000 ns/iter (  60 it)  sonic-rs=   1366100 ns/iter ( 113 it)  a/b=1.958
+  pair  5 lead=ours     ours=   2571000 ns/iter (  57 it)  sonic-rs=   1416600 ns/iter ( 118 it)  a/b=1.815
+  pair  6 lead=sonic-rs ours=   2595100 ns/iter (  61 it)  sonic-rs=   1281900 ns/iter ( 156 it)  a/b=2.024
+  pair  7 lead=ours     ours=   2570300 ns/iter (  56 it)  sonic-rs=   1350400 ns/iter ( 116 it)  a/b=1.903
+  pair  8 lead=sonic-rs ours=   2706600 ns/iter (  50 it)  sonic-rs=   1344900 ns/iter ( 158 it)  a/b=2.012
+  pair  9 lead=ours     ours=   2657200 ns/iter (  50 it)  sonic-rs=   1301300 ns/iter ( 146 it)  a/b=2.042
+  pair 10 lead=sonic-rs ours=   2725100 ns/iter (  61 it)  sonic-rs=   1307400 ns/iter ( 146 it)  a/b=2.084
+  pair 11 lead=ours     ours=   2614000 ns/iter (  61 it)  sonic-rs=   1273400 ns/iter ( 166 it)  a/b=2.053
+  pair 12 lead=sonic-rs ours=   2605500 ns/iter (  60 it)  sonic-rs=   1284200 ns/iter ( 167 it)  a/b=2.029
+  pair 13 lead=ours     ours=   2599200 ns/iter (  52 it)  sonic-rs=   1245800 ns/iter ( 156 it)  a/b=2.086
+  pair 14 lead=sonic-rs ours=   2715600 ns/iter (  55 it)  sonic-rs=   1251600 ns/iter ( 153 it)  a/b=2.170
+  pair 15 lead=ours     ours=   2685100 ns/iter (  58 it)  sonic-rs=   1250400 ns/iter ( 164 it)  a/b=2.147
+  pair 16 lead=sonic-rs ours=   2605000 ns/iter (  63 it)  sonic-rs=   1243700 ns/iter ( 169 it)  a/b=2.095
+  pair 17 lead=ours     ours=   2608300 ns/iter (  64 it)  sonic-rs=   1264500 ns/iter ( 170 it)  a/b=2.063
+  pair 18 lead=sonic-rs ours=   2580700 ns/iter (  61 it)  sonic-rs=   1307100 ns/iter ( 145 it)  a/b=1.974
+  pair 19 lead=ours     ours=   2720100 ns/iter (  52 it)  sonic-rs=   1280800 ns/iter ( 157 it)  a/b=2.124
+  pair 20 lead=sonic-rs ours=   2759900 ns/iter (  56 it)  sonic-rs=   1274800 ns/iter ( 172 it)  a/b=2.165
+  => median a/b 2.047 [1.815, 2.170]  wins 0/20  z -4.47  ours 668 MB/s  sonic-rs 1366 MB/s
+
+== citm_catalog / dom-stringify (1777672 bytes)
+  pair  1 lead=ours     ours=    434600 ns/iter ( 456 it)  sonic-rs=    699100 ns/iter ( 247 it)  a/b=0.622
+  pair  2 lead=sonic-rs ours=    413000 ns/iter ( 506 it)  sonic-rs=    630400 ns/iter ( 356 it)  a/b=0.655
+  pair  3 lead=ours     ours=    429200 ns/iter ( 474 it)  sonic-rs=    644300 ns/iter ( 358 it)  a/b=0.666
+  pair  4 lead=sonic-rs ours=    435700 ns/iter ( 509 it)  sonic-rs=    629600 ns/iter ( 363 it)  a/b=0.692
+  pair  5 lead=ours     ours=    433800 ns/iter ( 522 it)  sonic-rs=    634300 ns/iter ( 363 it)  a/b=0.684
+  pair  6 lead=sonic-rs ours=    413000 ns/iter ( 533 it)  sonic-rs=    629300 ns/iter ( 367 it)  a/b=0.656
+  pair  7 lead=ours     ours=    422700 ns/iter ( 546 it)  sonic-rs=    614000 ns/iter ( 321 it)  a/b=0.688
+  pair  8 lead=sonic-rs ours=    424300 ns/iter ( 408 it)  sonic-rs=    629700 ns/iter ( 364 it)  a/b=0.674
+  pair  9 lead=ours     ours=    435500 ns/iter ( 516 it)  sonic-rs=    631800 ns/iter ( 363 it)  a/b=0.689
+  pair 10 lead=sonic-rs ours=    428200 ns/iter ( 518 it)  sonic-rs=    644500 ns/iter ( 369 it)  a/b=0.664
+  pair 11 lead=ours     ours=    423700 ns/iter ( 456 it)  sonic-rs=    632600 ns/iter ( 371 it)  a/b=0.670
+  pair 12 lead=sonic-rs ours=    424200 ns/iter ( 502 it)  sonic-rs=    645400 ns/iter ( 360 it)  a/b=0.657
+  pair 13 lead=ours     ours=    431900 ns/iter ( 525 it)  sonic-rs=    649000 ns/iter ( 340 it)  a/b=0.665
+  pair 14 lead=sonic-rs ours=    443200 ns/iter ( 418 it)  sonic-rs=    663900 ns/iter ( 322 it)  a/b=0.668
+  pair 15 lead=ours     ours=    428300 ns/iter ( 458 it)  sonic-rs=    640400 ns/iter ( 328 it)  a/b=0.669
+  pair 16 lead=sonic-rs ours=    421400 ns/iter ( 528 it)  sonic-rs=    644700 ns/iter ( 364 it)  a/b=0.654
+  pair 17 lead=ours     ours=    422600 ns/iter ( 518 it)  sonic-rs=    644800 ns/iter ( 304 it)  a/b=0.655
+  pair 18 lead=sonic-rs ours=    426900 ns/iter ( 461 it)  sonic-rs=    644300 ns/iter ( 357 it)  a/b=0.663
+  pair 19 lead=ours     ours=    421600 ns/iter ( 486 it)  sonic-rs=    634600 ns/iter ( 360 it)  a/b=0.664
+  pair 20 lead=sonic-rs ours=    435000 ns/iter ( 485 it)  sonic-rs=    630800 ns/iter ( 318 it)  a/b=0.690
+  => median a/b 0.666 [0.622, 0.692]  wins 20/20  z +4.47  ours 1168 MB/s  sonic-rs 781 MB/s
+
+== citm_catalog / struct-parse (1777672 bytes)
+  pair  1 lead=ours     ours=   1418100 ns/iter ( 124 it)  sonic-rs=   1279300 ns/iter ( 133 it)  a/b=1.108
+  pair  2 lead=sonic-rs ours=   1415400 ns/iter ( 147 it)  sonic-rs=   1314600 ns/iter ( 133 it)  a/b=1.077
+  pair  3 lead=ours     ours=   1376800 ns/iter ( 140 it)  sonic-rs=   1212900 ns/iter ( 161 it)  a/b=1.135
+  pair  4 lead=sonic-rs ours=   1391800 ns/iter ( 160 it)  sonic-rs=   1287600 ns/iter ( 162 it)  a/b=1.081
+  pair  5 lead=ours     ours=   1349400 ns/iter ( 142 it)  sonic-rs=   1301000 ns/iter ( 168 it)  a/b=1.037
+  pair  6 lead=sonic-rs ours=   1344400 ns/iter ( 160 it)  sonic-rs=   1270700 ns/iter ( 176 it)  a/b=1.058
+  pair  7 lead=ours     ours=   1366200 ns/iter ( 164 it)  sonic-rs=   1271500 ns/iter ( 162 it)  a/b=1.074
+  pair  8 lead=sonic-rs ours=   1348300 ns/iter ( 160 it)  sonic-rs=   1242800 ns/iter ( 182 it)  a/b=1.085
+  pair  9 lead=ours     ours=   1365700 ns/iter ( 169 it)  sonic-rs=   1220500 ns/iter ( 164 it)  a/b=1.119
+  pair 10 lead=sonic-rs ours=   1329300 ns/iter ( 171 it)  sonic-rs=   1227000 ns/iter ( 179 it)  a/b=1.083
+  pair 11 lead=ours     ours=   1342200 ns/iter ( 164 it)  sonic-rs=   1252600 ns/iter ( 175 it)  a/b=1.072
+  pair 12 lead=sonic-rs ours=   1368800 ns/iter ( 160 it)  sonic-rs=   1268400 ns/iter ( 177 it)  a/b=1.079
+  pair 13 lead=ours     ours=   1361300 ns/iter ( 156 it)  sonic-rs=   1271900 ns/iter ( 166 it)  a/b=1.070
+  pair 14 lead=sonic-rs ours=   1371400 ns/iter ( 163 it)  sonic-rs=   1271100 ns/iter ( 147 it)  a/b=1.079
+  pair 15 lead=ours     ours=   1351900 ns/iter ( 163 it)  sonic-rs=   1277200 ns/iter ( 176 it)  a/b=1.058
+  pair 16 lead=sonic-rs ours=   1343700 ns/iter ( 171 it)  sonic-rs=   1276200 ns/iter ( 181 it)  a/b=1.053
+  pair 17 lead=ours     ours=   1330900 ns/iter ( 174 it)  sonic-rs=   1263900 ns/iter ( 172 it)  a/b=1.053
+  pair 18 lead=sonic-rs ours=   1354700 ns/iter ( 151 it)  sonic-rs=   1242900 ns/iter ( 180 it)  a/b=1.090
+  pair 19 lead=ours     ours=   1337200 ns/iter ( 156 it)  sonic-rs=   1279300 ns/iter ( 163 it)  a/b=1.045
+  pair 20 lead=sonic-rs ours=   1343800 ns/iter ( 160 it)  sonic-rs=   1266500 ns/iter ( 175 it)  a/b=1.061
+  => median a/b 1.076 [1.037, 1.135]  wins 0/20  z -4.47  ours 1312 MB/s  sonic-rs 1399 MB/s
+
+== citm_catalog / struct-stringify (1777672 bytes)
+  pair  1 lead=ours     ours=    254900 ns/iter ( 847 it)  sonic-rs=    496500 ns/iter ( 395 it)  a/b=0.513
+  pair  2 lead=sonic-rs ours=    258800 ns/iter ( 752 it)  sonic-rs=    531100 ns/iter ( 435 it)  a/b=0.487
+  pair  3 lead=ours     ours=    263000 ns/iter ( 878 it)  sonic-rs=    501100 ns/iter ( 451 it)  a/b=0.525
+  pair  4 lead=sonic-rs ours=    250900 ns/iter ( 870 it)  sonic-rs=    520300 ns/iter ( 433 it)  a/b=0.482
+  pair  5 lead=ours     ours=    255600 ns/iter ( 813 it)  sonic-rs=    507300 ns/iter ( 433 it)  a/b=0.504
+  pair  6 lead=sonic-rs ours=    257400 ns/iter ( 836 it)  sonic-rs=    497200 ns/iter ( 444 it)  a/b=0.518
+  pair  7 lead=ours     ours=    255500 ns/iter ( 884 it)  sonic-rs=    506200 ns/iter ( 421 it)  a/b=0.505
+  pair  8 lead=sonic-rs ours=    258900 ns/iter ( 825 it)  sonic-rs=    496100 ns/iter ( 434 it)  a/b=0.522
+  pair  9 lead=ours     ours=    256800 ns/iter ( 881 it)  sonic-rs=    496600 ns/iter ( 470 it)  a/b=0.517
+  pair 10 lead=sonic-rs ours=    245000 ns/iter ( 881 it)  sonic-rs=    485900 ns/iter ( 462 it)  a/b=0.504
+  pair 11 lead=ours     ours=    251300 ns/iter ( 895 it)  sonic-rs=    518800 ns/iter ( 445 it)  a/b=0.484
+  pair 12 lead=sonic-rs ours=    255100 ns/iter ( 881 it)  sonic-rs=    507700 ns/iter ( 455 it)  a/b=0.502
+  pair 13 lead=ours     ours=    255300 ns/iter ( 928 it)  sonic-rs=    507000 ns/iter ( 425 it)  a/b=0.504
+  pair 14 lead=sonic-rs ours=    239200 ns/iter ( 867 it)  sonic-rs=    508700 ns/iter ( 426 it)  a/b=0.470
+  pair 15 lead=ours     ours=    250800 ns/iter ( 774 it)  sonic-rs=    519300 ns/iter ( 419 it)  a/b=0.483
+  pair 16 lead=sonic-rs ours=    260800 ns/iter ( 638 it)  sonic-rs=    496300 ns/iter ( 417 it)  a/b=0.525
+  pair 17 lead=ours     ours=    271400 ns/iter ( 640 it)  sonic-rs=    509200 ns/iter ( 430 it)  a/b=0.533
+  pair 18 lead=sonic-rs ours=    257900 ns/iter ( 845 it)  sonic-rs=    518300 ns/iter ( 416 it)  a/b=0.498
+  pair 19 lead=ours     ours=    255400 ns/iter ( 879 it)  sonic-rs=    485900 ns/iter ( 466 it)  a/b=0.526
+  pair 20 lead=sonic-rs ours=    250000 ns/iter ( 911 it)  sonic-rs=    494100 ns/iter ( 467 it)  a/b=0.506
+  => median a/b 0.504 [0.470, 0.533]  wins 20/20  z +4.47  ours 1958 MB/s  sonic-rs 987 MB/s
+
+== canada / dom-parse (2251060 bytes)
+  pair  1 lead=ours     ours=   5908000 ns/iter (  31 it)  sonic-rs=   3767700 ns/iter (  57 it)  a/b=1.568
+  pair  2 lead=sonic-rs ours=   5784800 ns/iter (  33 it)  sonic-rs=   3826700 ns/iter (  59 it)  a/b=1.512
+  pair  3 lead=ours     ours=   5889100 ns/iter (  32 it)  sonic-rs=   3988400 ns/iter (  55 it)  a/b=1.477
+  pair  4 lead=sonic-rs ours=   5854800 ns/iter (  32 it)  sonic-rs=   3803400 ns/iter (  58 it)  a/b=1.539
+  pair  5 lead=ours     ours=   5883500 ns/iter (  34 it)  sonic-rs=   3825000 ns/iter (  57 it)  a/b=1.538
+  pair  6 lead=sonic-rs ours=   5752300 ns/iter (  33 it)  sonic-rs=   3877300 ns/iter (  55 it)  a/b=1.484
+  pair  7 lead=ours     ours=   5884600 ns/iter (  33 it)  sonic-rs=   3754700 ns/iter (  54 it)  a/b=1.567
+  pair  8 lead=sonic-rs ours=   5775400 ns/iter (  30 it)  sonic-rs=   3888800 ns/iter (  58 it)  a/b=1.485
+  pair  9 lead=ours     ours=   5697600 ns/iter (  34 it)  sonic-rs=   3703500 ns/iter (  59 it)  a/b=1.538
+  pair 10 lead=sonic-rs ours=   5815200 ns/iter (  32 it)  sonic-rs=   3816200 ns/iter (  52 it)  a/b=1.524
+  pair 11 lead=ours     ours=   5801500 ns/iter (  33 it)  sonic-rs=   3779800 ns/iter (  59 it)  a/b=1.535
+  pair 12 lead=sonic-rs ours=   5744000 ns/iter (  32 it)  sonic-rs=   3846600 ns/iter (  59 it)  a/b=1.493
+  pair 13 lead=ours     ours=   5630000 ns/iter (  34 it)  sonic-rs=   3810100 ns/iter (  55 it)  a/b=1.478
+  pair 14 lead=sonic-rs ours=   5546000 ns/iter (  34 it)  sonic-rs=   3806000 ns/iter (  51 it)  a/b=1.457
+  pair 15 lead=ours     ours=   5605100 ns/iter (  36 it)  sonic-rs=   3692600 ns/iter (  61 it)  a/b=1.518
+  pair 16 lead=sonic-rs ours=   5569000 ns/iter (  36 it)  sonic-rs=   3713400 ns/iter (  61 it)  a/b=1.500
+  pair 17 lead=ours     ours=   5685300 ns/iter (  35 it)  sonic-rs=   3727600 ns/iter (  61 it)  a/b=1.525
+  pair 18 lead=sonic-rs ours=   5595500 ns/iter (  34 it)  sonic-rs=   3718000 ns/iter (  61 it)  a/b=1.505
+  pair 19 lead=ours     ours=   5569300 ns/iter (  36 it)  sonic-rs=   3761800 ns/iter (  58 it)  a/b=1.480
+  pair 20 lead=sonic-rs ours=   5559300 ns/iter (  35 it)  sonic-rs=   3769900 ns/iter (  60 it)  a/b=1.475
+  => median a/b 1.508 [1.457, 1.568]  wins 0/20  z -4.47  ours 391 MB/s  sonic-rs 592 MB/s
+
+== canada / dom-stringify (2251060 bytes)
+  pair  1 lead=ours     ours=   2102700 ns/iter ( 109 it)  sonic-rs=   2243400 ns/iter ( 104 it)  a/b=0.937
+  pair  2 lead=sonic-rs ours=   2093600 ns/iter ( 111 it)  sonic-rs=   2239200 ns/iter ( 101 it)  a/b=0.935
+  pair  3 lead=ours     ours=   2076000 ns/iter ( 110 it)  sonic-rs=   2277800 ns/iter (  99 it)  a/b=0.911
+  pair  4 lead=sonic-rs ours=   2122400 ns/iter ( 107 it)  sonic-rs=   2200200 ns/iter ( 104 it)  a/b=0.965
+  pair  5 lead=ours     ours=   2140100 ns/iter ( 111 it)  sonic-rs=   2227400 ns/iter ( 106 it)  a/b=0.961
+  pair  6 lead=sonic-rs ours=   2082000 ns/iter ( 112 it)  sonic-rs=   2223500 ns/iter ( 105 it)  a/b=0.936
+  pair  7 lead=ours     ours=   2103100 ns/iter ( 109 it)  sonic-rs=   2169500 ns/iter ( 106 it)  a/b=0.969
+  pair  8 lead=sonic-rs ours=   2108700 ns/iter ( 106 it)  sonic-rs=   2202200 ns/iter ( 100 it)  a/b=0.958
+  pair  9 lead=ours     ours=   2104300 ns/iter ( 112 it)  sonic-rs=   2243300 ns/iter (  94 it)  a/b=0.938
+  pair 10 lead=sonic-rs ours=   2132400 ns/iter ( 108 it)  sonic-rs=   2236300 ns/iter ( 102 it)  a/b=0.954
+  pair 11 lead=ours     ours=   2086600 ns/iter ( 112 it)  sonic-rs=   2237200 ns/iter ( 104 it)  a/b=0.933
+  pair 12 lead=sonic-rs ours=   2043700 ns/iter ( 112 it)  sonic-rs=   2188100 ns/iter ( 107 it)  a/b=0.934
+  pair 13 lead=ours     ours=   2087200 ns/iter ( 113 it)  sonic-rs=   2242100 ns/iter ( 106 it)  a/b=0.931
+  pair 14 lead=sonic-rs ours=   2056100 ns/iter ( 111 it)  sonic-rs=   2248300 ns/iter ( 103 it)  a/b=0.915
+  pair 15 lead=ours     ours=   2132100 ns/iter ( 111 it)  sonic-rs=   2236600 ns/iter ( 104 it)  a/b=0.953
+  pair 16 lead=sonic-rs ours=   2077400 ns/iter ( 113 it)  sonic-rs=   2200600 ns/iter ( 108 it)  a/b=0.944
+  pair 17 lead=ours     ours=   2032700 ns/iter ( 110 it)  sonic-rs=   2316200 ns/iter ( 104 it)  a/b=0.878
+  pair 18 lead=sonic-rs ours=   2068900 ns/iter ( 108 it)  sonic-rs=   2238500 ns/iter ( 107 it)  a/b=0.924
+  pair 19 lead=ours     ours=   2004300 ns/iter ( 113 it)  sonic-rs=   2177400 ns/iter ( 107 it)  a/b=0.921
+  pair 20 lead=sonic-rs ours=   2073800 ns/iter ( 113 it)  sonic-rs=   2227200 ns/iter ( 102 it)  a/b=0.931
+  => median a/b 0.936 [0.878, 0.969]  wins 20/20  z +4.47  ours 989 MB/s  sonic-rs 923 MB/s
+
+== canada / struct-parse (2251060 bytes)
+  pair  1 lead=ours     ours=   3073200 ns/iter (  76 it)  sonic-rs=   3208000 ns/iter (  73 it)  a/b=0.958
+  pair  2 lead=sonic-rs ours=   3067400 ns/iter (  76 it)  sonic-rs=   3240600 ns/iter (  73 it)  a/b=0.947
+  pair  3 lead=ours     ours=   3066100 ns/iter (  73 it)  sonic-rs=   3350700 ns/iter (  67 it)  a/b=0.915
+  pair  4 lead=sonic-rs ours=   3059200 ns/iter (  77 it)  sonic-rs=   3340200 ns/iter (  68 it)  a/b=0.916
+  pair  5 lead=ours     ours=   3020500 ns/iter (  79 it)  sonic-rs=   3285600 ns/iter (  74 it)  a/b=0.919
+  pair  6 lead=sonic-rs ours=   3055900 ns/iter (  78 it)  sonic-rs=   3320600 ns/iter (  70 it)  a/b=0.920
+  pair  7 lead=ours     ours=   3013400 ns/iter (  76 it)  sonic-rs=   3256400 ns/iter (  73 it)  a/b=0.925
+  pair  8 lead=sonic-rs ours=   3069600 ns/iter (  77 it)  sonic-rs=   3311200 ns/iter (  73 it)  a/b=0.927
+  pair  9 lead=ours     ours=   3038200 ns/iter (  79 it)  sonic-rs=   3310400 ns/iter (  73 it)  a/b=0.918
+  pair 10 lead=sonic-rs ours=   3023600 ns/iter (  78 it)  sonic-rs=   3296800 ns/iter (  70 it)  a/b=0.917
+  pair 11 lead=ours     ours=   2998600 ns/iter (  79 it)  sonic-rs=   3244400 ns/iter (  75 it)  a/b=0.924
+  pair 12 lead=sonic-rs ours=   2999100 ns/iter (  80 it)  sonic-rs=   3256600 ns/iter (  74 it)  a/b=0.921
+  pair 13 lead=ours     ours=   3016300 ns/iter (  80 it)  sonic-rs=   3250400 ns/iter (  74 it)  a/b=0.928
+  pair 14 lead=sonic-rs ours=   3026600 ns/iter (  78 it)  sonic-rs=   3272700 ns/iter (  70 it)  a/b=0.925
+  pair 15 lead=ours     ours=   3023500 ns/iter (  79 it)  sonic-rs=   3248800 ns/iter (  73 it)  a/b=0.931
+  pair 16 lead=sonic-rs ours=   3059300 ns/iter (  79 it)  sonic-rs=   3370600 ns/iter (  72 it)  a/b=0.908
+  pair 17 lead=ours     ours=   3060000 ns/iter (  79 it)  sonic-rs=   3336300 ns/iter (  71 it)  a/b=0.917
+  pair 18 lead=sonic-rs ours=   3108600 ns/iter (  75 it)  sonic-rs=   3423900 ns/iter (  70 it)  a/b=0.908
+  pair 19 lead=ours     ours=   3091600 ns/iter (  77 it)  sonic-rs=   3307900 ns/iter (  73 it)  a/b=0.935
+  pair 20 lead=sonic-rs ours=   3206700 ns/iter (  75 it)  sonic-rs=   3346900 ns/iter (  68 it)  a/b=0.958
+  => median a/b 0.923 [0.908, 0.958]  wins 20/20  z +4.47  ours 736 MB/s  sonic-rs 681 MB/s
+
+== canada / struct-stringify (2251060 bytes)
+  pair  1 lead=ours     ours=   1840800 ns/iter ( 129 it)  sonic-rs=   1878100 ns/iter ( 128 it)  a/b=0.980
+  pair  2 lead=sonic-rs ours=   1801200 ns/iter ( 130 it)  sonic-rs=   1885200 ns/iter ( 127 it)  a/b=0.955
+  pair  3 lead=ours     ours=   1831800 ns/iter ( 129 it)  sonic-rs=   1888300 ns/iter ( 125 it)  a/b=0.970
+  pair  4 lead=sonic-rs ours=   1812100 ns/iter ( 131 it)  sonic-rs=   1919100 ns/iter ( 125 it)  a/b=0.944
+  pair  5 lead=ours     ours=   1836800 ns/iter ( 128 it)  sonic-rs=   1880300 ns/iter ( 128 it)  a/b=0.977
+  pair  6 lead=sonic-rs ours=   1834100 ns/iter ( 130 it)  sonic-rs=   1923600 ns/iter ( 124 it)  a/b=0.953
+  pair  7 lead=ours     ours=   1804200 ns/iter ( 131 it)  sonic-rs=   1928400 ns/iter ( 124 it)  a/b=0.936
+  pair  8 lead=sonic-rs ours=   1798200 ns/iter ( 130 it)  sonic-rs=   1879700 ns/iter ( 128 it)  a/b=0.957
+  pair  9 lead=ours     ours=   1836500 ns/iter ( 131 it)  sonic-rs=   1886700 ns/iter ( 107 it)  a/b=0.973
+  pair 10 lead=sonic-rs ours=   1928400 ns/iter ( 114 it)  sonic-rs=   1920000 ns/iter ( 123 it)  a/b=1.004
+  pair 11 lead=ours     ours=   1840500 ns/iter ( 124 it)  sonic-rs=   1944300 ns/iter ( 113 it)  a/b=0.947
+  pair 12 lead=sonic-rs ours=   1903700 ns/iter ( 124 it)  sonic-rs=   1927000 ns/iter ( 124 it)  a/b=0.988
+  pair 13 lead=ours     ours=   1880400 ns/iter ( 118 it)  sonic-rs=   1921600 ns/iter ( 123 it)  a/b=0.979
+  pair 14 lead=sonic-rs ours=   1798900 ns/iter ( 130 it)  sonic-rs=   1872200 ns/iter ( 127 it)  a/b=0.961
+  pair 15 lead=ours     ours=   1832600 ns/iter ( 131 it)  sonic-rs=   1791400 ns/iter ( 115 it)  a/b=1.023
+  pair 16 lead=sonic-rs ours=   1837600 ns/iter ( 131 it)  sonic-rs=   1894900 ns/iter ( 125 it)  a/b=0.970
+  pair 17 lead=ours     ours=   1825300 ns/iter ( 126 it)  sonic-rs=   1890800 ns/iter ( 120 it)  a/b=0.965
+  pair 18 lead=sonic-rs ours=   1835200 ns/iter ( 133 it)  sonic-rs=   1877600 ns/iter ( 126 it)  a/b=0.977
+  pair 19 lead=ours     ours=   1850800 ns/iter ( 125 it)  sonic-rs=   1927100 ns/iter ( 125 it)  a/b=0.960
+  pair 20 lead=sonic-rs ours=   1839400 ns/iter ( 130 it)  sonic-rs=   1855700 ns/iter ( 129 it)  a/b=0.991
+  => median a/b 0.970 [0.936, 1.023]  wins 18/20  z +3.58  ours 656 MB/s  sonic-rs 637 MB/s
+
+| file | column | ours | sonic-rs | ours/sonic-rs time (median [min, max]) | wins, z |
+|---|---|---:|---:|---:|---:|
+| twitter | dom-parse | ours **449 MB/s** | sonic-rs 1609 MB/s | **3.583x** [3.286, 4.526] | 0/20, z = -4.47 |
+| twitter | dom-stringify | ours **1669 MB/s** | sonic-rs 1557 MB/s | **0.936x** [0.901, 0.978] | 20/20, z = +4.47 |
+| twitter | struct-parse | ours **914 MB/s** | sonic-rs 937 MB/s | **1.031x** [1.001, 1.051] | 0/20, z = -4.47 |
+| twitter | struct-stringify | ours **1833 MB/s** | sonic-rs 1742 MB/s | **0.964x** [0.926, 1.015] | 19/20, z = +4.02 |
+| citm_catalog | dom-parse | ours **668 MB/s** | sonic-rs 1366 MB/s | **2.047x** [1.815, 2.170] | 0/20, z = -4.47 |
+| citm_catalog | dom-stringify | ours **1168 MB/s** | sonic-rs 781 MB/s | **0.666x** [0.622, 0.692] | 20/20, z = +4.47 |
+| citm_catalog | struct-parse | ours **1312 MB/s** | sonic-rs 1399 MB/s | **1.076x** [1.037, 1.135] | 0/20, z = -4.47 |
+| citm_catalog | struct-stringify | ours **1958 MB/s** | sonic-rs 987 MB/s | **0.504x** [0.470, 0.533] | 20/20, z = +4.47 |
+| canada | dom-parse | ours **391 MB/s** | sonic-rs 592 MB/s | **1.508x** [1.457, 1.568] | 0/20, z = -4.47 |
+| canada | dom-stringify | ours **989 MB/s** | sonic-rs 923 MB/s | **0.936x** [0.878, 0.969] | 20/20, z = +4.47 |
+| canada | struct-parse | ours **736 MB/s** | sonic-rs 681 MB/s | **0.923x** [0.908, 0.958] | 20/20, z = +4.47 |
+| canada | struct-stringify | ours **656 MB/s** | sonic-rs 637 MB/s | **0.970x** [0.936, 1.023] | 18/20, z = +3.58 |
+
+method: in-process paired A/B, one binary, both arms linked; lead alternated per pair (ABBA); pairs=20; window=250 ms per arm-sample, statistic=min per-iteration time in the window, verdict=median of paired ratios + paired wins with z; clock=std::time::Instant (QPC on Windows); pinned=cpu2/High; allocator=system (both arms; as-shipped rows are a separate table); isa=scalar (no kernels wired at M0); work parity: identical input bytes, output length asserted equal per pair for serde_json-shaped arms; stringify buffers pre-sized and cleared (growth excluded); competitors: simd-json input copy excluded from the timed region; machine=windows x86_64 ; commit=b3df966

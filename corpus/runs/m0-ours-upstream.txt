@@ -1,0 +1,294 @@
+rjson-bench: ours vs upstream | 12 cells | 20 pairs | 250 ms windows
+
+== twitter / dom-parse (646995 bytes)
+  pair  1 lead=ours     ours=   1787300 ns/iter (  99 it)  upstream=   1451900 ns/iter (  98 it)  a/b=1.231
+  pair  2 lead=upstream ours=   1386800 ns/iter ( 128 it)  upstream=   1388500 ns/iter ( 116 it)  a/b=0.999
+  pair  3 lead=ours     ours=   1375600 ns/iter ( 127 it)  upstream=   1373600 ns/iter ( 129 it)  a/b=1.001
+  pair  4 lead=upstream ours=   1436000 ns/iter ( 113 it)  upstream=   1432700 ns/iter ( 117 it)  a/b=1.002
+  pair  5 lead=ours     ours=   1399000 ns/iter ( 127 it)  upstream=   1420800 ns/iter ( 123 it)  a/b=0.985
+  pair  6 lead=upstream ours=   1423500 ns/iter ( 122 it)  upstream=   1413800 ns/iter ( 121 it)  a/b=1.007
+  pair  7 lead=ours     ours=   1399900 ns/iter ( 122 it)  upstream=   1401400 ns/iter ( 128 it)  a/b=0.999
+  pair  8 lead=upstream ours=   1377200 ns/iter ( 134 it)  upstream=   1380200 ns/iter ( 126 it)  a/b=0.998
+  pair  9 lead=ours     ours=   1385100 ns/iter ( 132 it)  upstream=   1366600 ns/iter ( 132 it)  a/b=1.014
+  pair 10 lead=upstream ours=   1380000 ns/iter ( 120 it)  upstream=   1369400 ns/iter ( 127 it)  a/b=1.008
+  pair 11 lead=ours     ours=   1397800 ns/iter ( 130 it)  upstream=   1382400 ns/iter ( 130 it)  a/b=1.011
+  pair 12 lead=upstream ours=   1376900 ns/iter ( 134 it)  upstream=   1345100 ns/iter ( 135 it)  a/b=1.024
+  pair 13 lead=ours     ours=   1390400 ns/iter ( 133 it)  upstream=   1373400 ns/iter ( 130 it)  a/b=1.012
+  pair 14 lead=upstream ours=   1379800 ns/iter ( 131 it)  upstream=   1352900 ns/iter ( 133 it)  a/b=1.020
+  pair 15 lead=ours     ours=   1379300 ns/iter ( 132 it)  upstream=   1391800 ns/iter ( 132 it)  a/b=0.991
+  pair 16 lead=upstream ours=   1397900 ns/iter ( 127 it)  upstream=   1380100 ns/iter ( 133 it)  a/b=1.013
+  pair 17 lead=ours     ours=   1387500 ns/iter ( 130 it)  upstream=   1380700 ns/iter ( 133 it)  a/b=1.005
+  pair 18 lead=upstream ours=   1375900 ns/iter ( 134 it)  upstream=   1365000 ns/iter ( 126 it)  a/b=1.008
+  pair 19 lead=ours     ours=   1373000 ns/iter ( 130 it)  upstream=   1355200 ns/iter ( 125 it)  a/b=1.013
+  pair 20 lead=upstream ours=   1408100 ns/iter ( 129 it)  upstream=   1386300 ns/iter ( 123 it)  a/b=1.016
+  => median a/b 1.008 [0.985, 1.231]  wins 5/20  z -2.24  ours 466 MB/s  upstream 469 MB/s
+
+== twitter / dom-stringify (646995 bytes)
+  pair  1 lead=ours     ours=    264100 ns/iter ( 849 it)  upstream=    273700 ns/iter ( 817 it)  a/b=0.965
+  pair  2 lead=upstream ours=    273200 ns/iter ( 844 it)  upstream=    266300 ns/iter ( 827 it)  a/b=1.026
+  pair  3 lead=ours     ours=    274700 ns/iter ( 768 it)  upstream=    272900 ns/iter ( 843 it)  a/b=1.007
+  pair  4 lead=upstream ours=    272700 ns/iter ( 847 it)  upstream=    272100 ns/iter ( 830 it)  a/b=1.002
+  pair  5 lead=ours     ours=    269500 ns/iter ( 834 it)  upstream=    279000 ns/iter ( 829 it)  a/b=0.966
+  pair  6 lead=upstream ours=    273000 ns/iter ( 831 it)  upstream=    272400 ns/iter ( 774 it)  a/b=1.002
+  pair  7 lead=ours     ours=    260100 ns/iter ( 782 it)  upstream=    267100 ns/iter ( 847 it)  a/b=0.974
+  pair  8 lead=upstream ours=    279600 ns/iter ( 793 it)  upstream=    274300 ns/iter ( 810 it)  a/b=1.019
+  pair  9 lead=ours     ours=    269200 ns/iter ( 816 it)  upstream=    273100 ns/iter ( 832 it)  a/b=0.986
+  pair 10 lead=upstream ours=    272800 ns/iter ( 837 it)  upstream=    265900 ns/iter ( 840 it)  a/b=1.026
+  pair 11 lead=ours     ours=    271200 ns/iter ( 726 it)  upstream=    270200 ns/iter ( 817 it)  a/b=1.004
+  pair 12 lead=upstream ours=    274400 ns/iter ( 800 it)  upstream=    267200 ns/iter ( 839 it)  a/b=1.027
+  pair 13 lead=ours     ours=    262400 ns/iter ( 834 it)  upstream=    279300 ns/iter ( 800 it)  a/b=0.939
+  pair 14 lead=upstream ours=    273000 ns/iter ( 842 it)  upstream=    273400 ns/iter ( 823 it)  a/b=0.999
+  pair 15 lead=ours     ours=    271300 ns/iter ( 794 it)  upstream=    273700 ns/iter ( 777 it)  a/b=0.991
+  pair 16 lead=upstream ours=    273700 ns/iter ( 838 it)  upstream=    267500 ns/iter ( 847 it)  a/b=1.023
+  pair 17 lead=ours     ours=    264700 ns/iter ( 819 it)  upstream=    273900 ns/iter ( 842 it)  a/b=0.966
+  pair 18 lead=upstream ours=    274600 ns/iter ( 821 it)  upstream=    268100 ns/iter ( 782 it)  a/b=1.024
+  pair 19 lead=ours     ours=    272000 ns/iter ( 835 it)  upstream=    276000 ns/iter ( 841 it)  a/b=0.986
+  pair 20 lead=upstream ours=    276300 ns/iter ( 839 it)  upstream=    277400 ns/iter ( 768 it)  a/b=0.996
+  => median a/b 1.000 [0.939, 1.027]  wins 10/20  z +0.00  ours 1712 MB/s  upstream 1710 MB/s
+
+== twitter / struct-parse (646995 bytes)
+  pair  1 lead=ours     ours=    691500 ns/iter ( 312 it)  upstream=    698900 ns/iter ( 308 it)  a/b=0.989
+  pair  2 lead=upstream ours=    681100 ns/iter ( 308 it)  upstream=    689800 ns/iter ( 315 it)  a/b=0.987
+  pair  3 lead=ours     ours=    690400 ns/iter ( 311 it)  upstream=    708500 ns/iter ( 304 it)  a/b=0.974
+  pair  4 lead=upstream ours=    694800 ns/iter ( 281 it)  upstream=    690600 ns/iter ( 319 it)  a/b=1.006
+  pair  5 lead=ours     ours=    673500 ns/iter ( 321 it)  upstream=    707700 ns/iter ( 314 it)  a/b=0.952
+  pair  6 lead=upstream ours=    692500 ns/iter ( 289 it)  upstream=    697800 ns/iter ( 318 it)  a/b=0.992
+  pair  7 lead=ours     ours=    674200 ns/iter ( 317 it)  upstream=    700900 ns/iter ( 305 it)  a/b=0.962
+  pair  8 lead=upstream ours=    690000 ns/iter ( 301 it)  upstream=    687100 ns/iter ( 287 it)  a/b=1.004
+  pair  9 lead=ours     ours=    689500 ns/iter ( 321 it)  upstream=    682600 ns/iter ( 274 it)  a/b=1.010
+  pair 10 lead=upstream ours=    675100 ns/iter ( 324 it)  upstream=    683600 ns/iter ( 314 it)  a/b=0.988
+  pair 11 lead=ours     ours=    672000 ns/iter ( 296 it)  upstream=    690000 ns/iter ( 286 it)  a/b=0.974
+  pair 12 lead=upstream ours=    710900 ns/iter ( 302 it)  upstream=    696200 ns/iter ( 295 it)  a/b=1.021
+  pair 13 lead=ours     ours=    711500 ns/iter ( 282 it)  upstream=    717400 ns/iter ( 306 it)  a/b=0.992
+  pair 14 lead=upstream ours=    704000 ns/iter ( 297 it)  upstream=    703600 ns/iter ( 296 it)  a/b=1.001
+  pair 15 lead=ours     ours=    688900 ns/iter ( 316 it)  upstream=    703400 ns/iter ( 288 it)  a/b=0.979
+  pair 16 lead=upstream ours=    704500 ns/iter ( 307 it)  upstream=    699800 ns/iter ( 300 it)  a/b=1.007
+  pair 17 lead=ours     ours=    689800 ns/iter ( 282 it)  upstream=    700000 ns/iter ( 287 it)  a/b=0.985
+  pair 18 lead=upstream ours=    703200 ns/iter ( 305 it)  upstream=    703600 ns/iter ( 294 it)  a/b=0.999
+  pair 19 lead=ours     ours=    704600 ns/iter ( 311 it)  upstream=    713700 ns/iter ( 302 it)  a/b=0.987
+  pair 20 lead=upstream ours=    693000 ns/iter ( 270 it)  upstream=    705800 ns/iter ( 312 it)  a/b=0.982
+  => median a/b 0.988 [0.952, 1.021]  wins 14/20  z +1.79  ours 936 MB/s  upstream 924 MB/s
+
+== twitter / struct-stringify (646995 bytes)
+  pair  1 lead=ours     ours=    248400 ns/iter ( 798 it)  upstream=    271000 ns/iter ( 810 it)  a/b=0.917
+  pair  2 lead=upstream ours=    261400 ns/iter ( 864 it)  upstream=    267900 ns/iter ( 803 it)  a/b=0.976
+  pair  3 lead=ours     ours=    259200 ns/iter ( 853 it)  upstream=    267200 ns/iter ( 856 it)  a/b=0.970
+  pair  4 lead=upstream ours=    261400 ns/iter ( 850 it)  upstream=    270000 ns/iter ( 801 it)  a/b=0.968
+  pair  5 lead=ours     ours=    261300 ns/iter ( 804 it)  upstream=    272700 ns/iter ( 813 it)  a/b=0.958
+  pair  6 lead=upstream ours=    259000 ns/iter ( 873 it)  upstream=    267300 ns/iter ( 790 it)  a/b=0.969
+  pair  7 lead=ours     ours=    259700 ns/iter ( 872 it)  upstream=    262800 ns/iter ( 865 it)  a/b=0.988
+  pair  8 lead=upstream ours=    256300 ns/iter ( 859 it)  upstream=    266800 ns/iter ( 864 it)  a/b=0.961
+  pair  9 lead=ours     ours=    257300 ns/iter ( 856 it)  upstream=    270000 ns/iter ( 859 it)  a/b=0.953
+  pair 10 lead=upstream ours=    257200 ns/iter ( 863 it)  upstream=    266400 ns/iter ( 829 it)  a/b=0.965
+  pair 11 lead=ours     ours=    255600 ns/iter ( 870 it)  upstream=    267900 ns/iter ( 778 it)  a/b=0.954
+  pair 12 lead=upstream ours=    260000 ns/iter ( 869 it)  upstream=    267200 ns/iter ( 821 it)  a/b=0.973
+  pair 13 lead=ours     ours=    258100 ns/iter ( 823 it)  upstream=    273200 ns/iter ( 818 it)  a/b=0.945
+  pair 14 lead=upstream ours=    266600 ns/iter ( 852 it)  upstream=    269000 ns/iter ( 833 it)  a/b=0.991
+  pair 15 lead=ours     ours=    261000 ns/iter ( 739 it)  upstream=    269500 ns/iter ( 725 it)  a/b=0.968
+  pair 16 lead=upstream ours=    259700 ns/iter ( 841 it)  upstream=    268300 ns/iter ( 796 it)  a/b=0.968
+  pair 17 lead=ours     ours=    253400 ns/iter ( 848 it)  upstream=    265500 ns/iter ( 830 it)  a/b=0.954
+  pair 18 lead=upstream ours=    260600 ns/iter ( 822 it)  upstream=    268200 ns/iter ( 821 it)  a/b=0.972
+  pair 19 lead=ours     ours=    263100 ns/iter ( 791 it)  upstream=    270500 ns/iter ( 781 it)  a/b=0.973
+  pair 20 lead=upstream ours=    264600 ns/iter ( 802 it)  upstream=    269600 ns/iter ( 779 it)  a/b=0.981
+  => median a/b 0.968 [0.917, 0.991]  wins 20/20  z +4.47  ours 1839 MB/s  upstream 1780 MB/s
+
+== citm_catalog / dom-parse (1777672 bytes)
+  pair  1 lead=ours     ours=   2575600 ns/iter (  65 it)  upstream=   2593700 ns/iter (  67 it)  a/b=0.993
+  pair  2 lead=upstream ours=   2532300 ns/iter (  65 it)  upstream=   2452900 ns/iter (  69 it)  a/b=1.032
+  pair  3 lead=ours     ours=   2505300 ns/iter (  61 it)  upstream=   2573300 ns/iter (  66 it)  a/b=0.974
+  pair  4 lead=upstream ours=   2497500 ns/iter (  64 it)  upstream=   2528900 ns/iter (  58 it)  a/b=0.988
+  pair  5 lead=ours     ours=   2545500 ns/iter (  67 it)  upstream=   2512300 ns/iter (  66 it)  a/b=1.013
+  pair  6 lead=upstream ours=   2450400 ns/iter (  71 it)  upstream=   2461400 ns/iter (  71 it)  a/b=0.996
+  pair  7 lead=ours     ours=   2489700 ns/iter (  71 it)  upstream=   2481000 ns/iter (  71 it)  a/b=1.004
+  pair  8 lead=upstream ours=   2445100 ns/iter (  62 it)  upstream=   2427100 ns/iter (  72 it)  a/b=1.007
+  pair  9 lead=ours     ours=   2465200 ns/iter (  69 it)  upstream=   2440300 ns/iter (  70 it)  a/b=1.010
+  pair 10 lead=upstream ours=   2490400 ns/iter (  66 it)  upstream=   2464700 ns/iter (  68 it)  a/b=1.010
+  pair 11 lead=ours     ours=   2527800 ns/iter (  69 it)  upstream=   2466000 ns/iter (  70 it)  a/b=1.025
+  pair 12 lead=upstream ours=   2510800 ns/iter (  71 it)  upstream=   2419400 ns/iter (  72 it)  a/b=1.038
+  pair 13 lead=ours     ours=   2474000 ns/iter (  68 it)  upstream=   2428700 ns/iter (  69 it)  a/b=1.019
+  pair 14 lead=upstream ours=   2511500 ns/iter (  67 it)  upstream=   2527700 ns/iter (  68 it)  a/b=0.994
+  pair 15 lead=ours     ours=   2503700 ns/iter (  64 it)  upstream=   2517300 ns/iter (  63 it)  a/b=0.995
+  pair 16 lead=upstream ours=   2474100 ns/iter (  73 it)  upstream=   2435700 ns/iter (  70 it)  a/b=1.016
+  pair 17 lead=ours     ours=   2460500 ns/iter (  68 it)  upstream=   2465500 ns/iter (  66 it)  a/b=0.998
+  pair 18 lead=upstream ours=   2467500 ns/iter (  59 it)  upstream=   2635700 ns/iter (  57 it)  a/b=0.936
+  pair 19 lead=ours     ours=   2508700 ns/iter (  68 it)  upstream=   2468700 ns/iter (  73 it)  a/b=1.016
+  pair 20 lead=upstream ours=   2438500 ns/iter (  68 it)  upstream=   2457800 ns/iter (  73 it)  a/b=0.992
+  => median a/b 1.005 [0.936, 1.038]  wins 9/20  z -0.45  ours 712 MB/s  upstream 721 MB/s
+
+== citm_catalog / dom-stringify (1777672 bytes)
+  pair  1 lead=ours     ours=    397100 ns/iter ( 564 it)  upstream=    413300 ns/iter ( 549 it)  a/b=0.961
+  pair  2 lead=upstream ours=    407100 ns/iter ( 519 it)  upstream=    395700 ns/iter ( 513 it)  a/b=1.029
+  pair  3 lead=ours     ours=    398000 ns/iter ( 558 it)  upstream=    414100 ns/iter ( 562 it)  a/b=0.961
+  pair  4 lead=upstream ours=    418900 ns/iter ( 557 it)  upstream=    411800 ns/iter ( 562 it)  a/b=1.017
+  pair  5 lead=ours     ours=    413700 ns/iter ( 558 it)  upstream=    413100 ns/iter ( 553 it)  a/b=1.001
+  pair  6 lead=upstream ours=    412500 ns/iter ( 557 it)  upstream=    414300 ns/iter ( 535 it)  a/b=0.996
+  pair  7 lead=ours     ours=    421300 ns/iter ( 561 it)  upstream=    412300 ns/iter ( 570 it)  a/b=1.022
+  pair  8 lead=upstream ours=    419500 ns/iter ( 559 it)  upstream=    410000 ns/iter ( 548 it)  a/b=1.023
+  pair  9 lead=ours     ours=    397600 ns/iter ( 520 it)  upstream=    410900 ns/iter ( 517 it)  a/b=0.968
+  pair 10 lead=upstream ours=    411500 ns/iter ( 565 it)  upstream=    419500 ns/iter ( 545 it)  a/b=0.981
+  pair 11 lead=ours     ours=    405100 ns/iter ( 557 it)  upstream=    405800 ns/iter ( 530 it)  a/b=0.998
+  pair 12 lead=upstream ours=    413400 ns/iter ( 571 it)  upstream=    411000 ns/iter ( 548 it)  a/b=1.006
+  pair 13 lead=ours     ours=    412200 ns/iter ( 518 it)  upstream=    412000 ns/iter ( 545 it)  a/b=1.000
+  pair 14 lead=upstream ours=    411100 ns/iter ( 539 it)  upstream=    412200 ns/iter ( 562 it)  a/b=0.997
+  pair 15 lead=ours     ours=    406700 ns/iter ( 569 it)  upstream=    418400 ns/iter ( 503 it)  a/b=0.972
+  pair 16 lead=upstream ours=    416700 ns/iter ( 529 it)  upstream=    407400 ns/iter ( 548 it)  a/b=1.023
+  pair 17 lead=ours     ours=    415800 ns/iter ( 530 it)  upstream=    424600 ns/iter ( 546 it)  a/b=0.979
+  pair 18 lead=upstream ours=    425000 ns/iter ( 551 it)  upstream=    415400 ns/iter ( 545 it)  a/b=1.023
+  pair 19 lead=ours     ours=    412800 ns/iter ( 561 it)  upstream=    409400 ns/iter ( 555 it)  a/b=1.008
+  pair 20 lead=upstream ours=    413700 ns/iter ( 537 it)  upstream=    413600 ns/iter ( 527 it)  a/b=1.000
+  => median a/b 1.000 [0.961, 1.029]  wins 9/20  z -0.45  ours 1212 MB/s  upstream 1213 MB/s
+
+== citm_catalog / struct-parse (1777672 bytes)
+  pair  1 lead=ours     ours=   1250900 ns/iter ( 179 it)  upstream=   1308600 ns/iter ( 175 it)  a/b=0.956
+  pair  2 lead=upstream ours=   1293600 ns/iter ( 178 it)  upstream=   1309600 ns/iter ( 173 it)  a/b=0.988
+  pair  3 lead=ours     ours=   1246800 ns/iter ( 178 it)  upstream=   1307500 ns/iter ( 170 it)  a/b=0.954
+  pair  4 lead=upstream ours=   1264000 ns/iter ( 174 it)  upstream=   1307500 ns/iter ( 169 it)  a/b=0.967
+  pair  5 lead=ours     ours=   1277100 ns/iter ( 184 it)  upstream=   1291500 ns/iter ( 181 it)  a/b=0.989
+  pair  6 lead=upstream ours=   1278000 ns/iter ( 182 it)  upstream=   1281800 ns/iter ( 179 it)  a/b=0.997
+  pair  7 lead=ours     ours=   1271600 ns/iter ( 181 it)  upstream=   1272000 ns/iter ( 182 it)  a/b=1.000
+  pair  8 lead=upstream ours=   1303200 ns/iter ( 175 it)  upstream=   1264800 ns/iter ( 183 it)  a/b=1.030
+  pair  9 lead=ours     ours=   1273900 ns/iter ( 176 it)  upstream=   1277300 ns/iter ( 182 it)  a/b=0.997
+  pair 10 lead=upstream ours=   1271000 ns/iter ( 179 it)  upstream=   1247900 ns/iter ( 184 it)  a/b=1.019
+  pair 11 lead=ours     ours=   1250400 ns/iter ( 187 it)  upstream=   1270900 ns/iter ( 182 it)  a/b=0.984
+  pair 12 lead=upstream ours=   1297200 ns/iter ( 178 it)  upstream=   1252500 ns/iter ( 172 it)  a/b=1.036
+  pair 13 lead=ours     ours=   1252800 ns/iter ( 185 it)  upstream=   1274600 ns/iter ( 182 it)  a/b=0.983
+  pair 14 lead=upstream ours=   1294900 ns/iter ( 162 it)  upstream=   1281700 ns/iter ( 174 it)  a/b=1.010
+  pair 15 lead=ours     ours=   1252300 ns/iter ( 171 it)  upstream=   1274000 ns/iter ( 182 it)  a/b=0.983
+  pair 16 lead=upstream ours=   1273600 ns/iter ( 183 it)  upstream=   1274900 ns/iter ( 184 it)  a/b=0.999
+  pair 17 lead=ours     ours=   1253100 ns/iter ( 180 it)  upstream=   1273400 ns/iter ( 182 it)  a/b=0.984
+  pair 18 lead=upstream ours=   1297000 ns/iter ( 171 it)  upstream=   1216600 ns/iter ( 173 it)  a/b=1.066
+  pair 19 lead=ours     ours=   1255800 ns/iter ( 181 it)  upstream=   1276000 ns/iter ( 181 it)  a/b=0.984
+  pair 20 lead=upstream ours=   1298800 ns/iter ( 174 it)  upstream=   1291100 ns/iter ( 181 it)  a/b=1.006
+  => median a/b 0.993 [0.954, 1.066]  wins 14/20  z +1.79  ours 1396 MB/s  upstream 1393 MB/s
+
+== citm_catalog / struct-stringify (1777672 bytes)
+  pair  1 lead=ours     ours=    239100 ns/iter ( 959 it)  upstream=    246200 ns/iter ( 944 it)  a/b=0.971
+  pair  2 lead=upstream ours=    255700 ns/iter ( 920 it)  upstream=    242300 ns/iter ( 954 it)  a/b=1.055
+  pair  3 lead=ours     ours=    250300 ns/iter ( 940 it)  upstream=    251600 ns/iter ( 940 it)  a/b=0.995
+  pair  4 lead=upstream ours=    250800 ns/iter ( 902 it)  upstream=    252500 ns/iter ( 923 it)  a/b=0.993
+  pair  5 lead=ours     ours=    225100 ns/iter ( 952 it)  upstream=    245500 ns/iter ( 968 it)  a/b=0.917
+  pair  6 lead=upstream ours=    245100 ns/iter ( 896 it)  upstream=    242500 ns/iter ( 923 it)  a/b=1.011
+  pair  7 lead=ours     ours=    244800 ns/iter ( 944 it)  upstream=    246500 ns/iter ( 953 it)  a/b=0.993
+  pair  8 lead=upstream ours=    257100 ns/iter ( 739 it)  upstream=    235700 ns/iter ( 908 it)  a/b=1.091
+  pair  9 lead=ours     ours=    250400 ns/iter ( 825 it)  upstream=    247900 ns/iter ( 875 it)  a/b=1.010
+  pair 10 lead=upstream ours=    256400 ns/iter ( 846 it)  upstream=    242800 ns/iter ( 923 it)  a/b=1.056
+  pair 11 lead=ours     ours=    255900 ns/iter ( 817 it)  upstream=    257000 ns/iter ( 936 it)  a/b=0.996
+  pair 12 lead=upstream ours=    247700 ns/iter ( 910 it)  upstream=    253100 ns/iter ( 921 it)  a/b=0.979
+  pair 13 lead=ours     ours=    240000 ns/iter ( 947 it)  upstream=    252500 ns/iter ( 923 it)  a/b=0.950
+  pair 14 lead=upstream ours=    249800 ns/iter ( 892 it)  upstream=    245400 ns/iter ( 939 it)  a/b=1.018
+  pair 15 lead=ours     ours=    245800 ns/iter ( 718 it)  upstream=    251100 ns/iter ( 826 it)  a/b=0.979
+  pair 16 lead=upstream ours=    249000 ns/iter ( 935 it)  upstream=    247900 ns/iter ( 929 it)  a/b=1.004
+  pair 17 lead=ours     ours=    230800 ns/iter ( 892 it)  upstream=    251600 ns/iter ( 956 it)  a/b=0.917
+  pair 18 lead=upstream ours=    244800 ns/iter ( 904 it)  upstream=    246500 ns/iter ( 939 it)  a/b=0.993
+  pair 19 lead=ours     ours=    245300 ns/iter ( 956 it)  upstream=    246000 ns/iter ( 956 it)  a/b=0.997
+  pair 20 lead=upstream ours=    244400 ns/iter ( 969 it)  upstream=    236300 ns/iter ( 933 it)  a/b=1.034
+  => median a/b 0.995 [0.917, 1.091]  wins 12/20  z +0.89  ours 2020 MB/s  upstream 2030 MB/s
+
+== canada / dom-parse (2251060 bytes)
+  pair  1 lead=ours     ours=   5724600 ns/iter (  35 it)  upstream=   5516100 ns/iter (  35 it)  a/b=1.038
+  pair  2 lead=upstream ours=   5734800 ns/iter (  35 it)  upstream=   5557800 ns/iter (  36 it)  a/b=1.032
+  pair  3 lead=ours     ours=   5759500 ns/iter (  34 it)  upstream=   5549800 ns/iter (  36 it)  a/b=1.038
+  pair  4 lead=upstream ours=   5622000 ns/iter (  33 it)  upstream=   5721700 ns/iter (  35 it)  a/b=0.983
+  pair  5 lead=ours     ours=   5617000 ns/iter (  30 it)  upstream=   5504100 ns/iter (  33 it)  a/b=1.021
+  pair  6 lead=upstream ours=   5429900 ns/iter (  35 it)  upstream=   5725300 ns/iter (  33 it)  a/b=0.948
+  pair  7 lead=ours     ours=   5645500 ns/iter (  36 it)  upstream=   5651400 ns/iter (  34 it)  a/b=0.999
+  pair  8 lead=upstream ours=   5700300 ns/iter (  34 it)  upstream=   5593700 ns/iter (  35 it)  a/b=1.019
+  pair  9 lead=ours     ours=   5697300 ns/iter (  33 it)  upstream=   5428200 ns/iter (  35 it)  a/b=1.050
+  pair 10 lead=upstream ours=   5605700 ns/iter (  35 it)  upstream=   5576100 ns/iter (  34 it)  a/b=1.005
+  pair 11 lead=ours     ours=   5588300 ns/iter (  34 it)  upstream=   5575100 ns/iter (  34 it)  a/b=1.002
+  pair 12 lead=upstream ours=   5563700 ns/iter (  34 it)  upstream=   5494500 ns/iter (  34 it)  a/b=1.013
+  pair 13 lead=ours     ours=   5603400 ns/iter (  35 it)  upstream=   5588700 ns/iter (  33 it)  a/b=1.003
+  pair 14 lead=upstream ours=   5617100 ns/iter (  34 it)  upstream=   5619800 ns/iter (  35 it)  a/b=1.000
+  pair 15 lead=ours     ours=   5600000 ns/iter (  34 it)  upstream=   5691700 ns/iter (  34 it)  a/b=0.984
+  pair 16 lead=upstream ours=   5691300 ns/iter (  32 it)  upstream=   5604600 ns/iter (  34 it)  a/b=1.015
+  pair 17 lead=ours     ours=   5576600 ns/iter (  31 it)  upstream=   5609800 ns/iter (  34 it)  a/b=0.994
+  pair 18 lead=upstream ours=   5529400 ns/iter (  31 it)  upstream=   5618000 ns/iter (  35 it)  a/b=0.984
+  pair 19 lead=ours     ours=   5713400 ns/iter (  28 it)  upstream=   5762700 ns/iter (  30 it)  a/b=0.991
+  pair 20 lead=upstream ours=   5640400 ns/iter (  34 it)  upstream=   5642100 ns/iter (  34 it)  a/b=1.000
+  => median a/b 1.002 [0.948, 1.050]  wins 9/20  z -0.45  ours 400 MB/s  upstream 402 MB/s
+
+== canada / dom-stringify (2251060 bytes)
+  pair  1 lead=ours     ours=   2142800 ns/iter ( 110 it)  upstream=   2127400 ns/iter ( 109 it)  a/b=1.007
+  pair  2 lead=upstream ours=   2154600 ns/iter ( 108 it)  upstream=   2091600 ns/iter ( 109 it)  a/b=1.030
+  pair  3 lead=ours     ours=   2175300 ns/iter (  97 it)  upstream=   2126800 ns/iter ( 103 it)  a/b=1.023
+  pair  4 lead=upstream ours=   2120000 ns/iter ( 108 it)  upstream=   2189500 ns/iter ( 104 it)  a/b=0.968
+  pair  5 lead=ours     ours=   2112800 ns/iter ( 110 it)  upstream=   2149800 ns/iter ( 109 it)  a/b=0.983
+  pair  6 lead=upstream ours=   2151100 ns/iter ( 111 it)  upstream=   2128900 ns/iter ( 110 it)  a/b=1.010
+  pair  7 lead=ours     ours=   2135800 ns/iter ( 105 it)  upstream=   2155600 ns/iter (  98 it)  a/b=0.991
+  pair  8 lead=upstream ours=   2133000 ns/iter ( 109 it)  upstream=   2129200 ns/iter ( 103 it)  a/b=1.002
+  pair  9 lead=ours     ours=   2143600 ns/iter ( 107 it)  upstream=   2152900 ns/iter ( 104 it)  a/b=0.996
+  pair 10 lead=upstream ours=   2109000 ns/iter ( 102 it)  upstream=   2186000 ns/iter (  97 it)  a/b=0.965
+  pair 11 lead=ours     ours=   2173900 ns/iter ( 101 it)  upstream=   2118300 ns/iter ( 108 it)  a/b=1.026
+  pair 12 lead=upstream ours=   2156700 ns/iter ( 106 it)  upstream=   2078500 ns/iter ( 105 it)  a/b=1.038
+  pair 13 lead=ours     ours=   2133100 ns/iter ( 109 it)  upstream=   2141600 ns/iter ( 110 it)  a/b=0.996
+  pair 14 lead=upstream ours=   2133900 ns/iter ( 110 it)  upstream=   2173500 ns/iter ( 108 it)  a/b=0.982
+  pair 15 lead=ours     ours=   2102000 ns/iter ( 107 it)  upstream=   2107000 ns/iter ( 107 it)  a/b=0.998
+  pair 16 lead=upstream ours=   2102800 ns/iter ( 113 it)  upstream=   2092000 ns/iter ( 106 it)  a/b=1.005
+  pair 17 lead=ours     ours=   2086600 ns/iter ( 110 it)  upstream=   2083400 ns/iter ( 111 it)  a/b=1.002
+  pair 18 lead=upstream ours=   2102200 ns/iter ( 101 it)  upstream=   2057400 ns/iter (  99 it)  a/b=1.022
+  pair 19 lead=ours     ours=   2084200 ns/iter ( 111 it)  upstream=   2068000 ns/iter ( 110 it)  a/b=1.008
+  pair 20 lead=upstream ours=   2090100 ns/iter ( 113 it)  upstream=   2069700 ns/iter ( 114 it)  a/b=1.010
+  => median a/b 1.003 [0.965, 1.038]  wins 8/20  z -0.89  ours 967 MB/s  upstream 970 MB/s
+
+== canada / struct-parse (2251060 bytes)
+  pair  1 lead=ours     ours=   2998500 ns/iter (  78 it)  upstream=   3010200 ns/iter (  72 it)  a/b=0.996
+  pair  2 lead=upstream ours=   3072000 ns/iter (  79 it)  upstream=   3033700 ns/iter (  71 it)  a/b=1.013
+  pair  3 lead=ours     ours=   2996000 ns/iter (  78 it)  upstream=   2983200 ns/iter (  75 it)  a/b=1.004
+  pair  4 lead=upstream ours=   3008800 ns/iter (  81 it)  upstream=   2940500 ns/iter (  80 it)  a/b=1.023
+  pair  5 lead=ours     ours=   2980000 ns/iter (  79 it)  upstream=   2974300 ns/iter (  75 it)  a/b=1.002
+  pair  6 lead=upstream ours=   2951900 ns/iter (  77 it)  upstream=   2950900 ns/iter (  79 it)  a/b=1.000
+  pair  7 lead=ours     ours=   2933500 ns/iter (  81 it)  upstream=   2990500 ns/iter (  81 it)  a/b=0.981
+  pair  8 lead=upstream ours=   2995400 ns/iter (  78 it)  upstream=   3032400 ns/iter (  78 it)  a/b=0.988
+  pair  9 lead=ours     ours=   2988100 ns/iter (  80 it)  upstream=   2995000 ns/iter (  73 it)  a/b=0.998
+  pair 10 lead=upstream ours=   3067300 ns/iter (  78 it)  upstream=   3001000 ns/iter (  69 it)  a/b=1.022
+  pair 11 lead=ours     ours=   3044600 ns/iter (  71 it)  upstream=   3058000 ns/iter (  74 it)  a/b=0.996
+  pair 12 lead=upstream ours=   3115700 ns/iter (  73 it)  upstream=   3079600 ns/iter (  72 it)  a/b=1.012
+  pair 13 lead=ours     ours=   3085600 ns/iter (  71 it)  upstream=   3213300 ns/iter (  70 it)  a/b=0.960
+  pair 14 lead=upstream ours=   3035700 ns/iter (  74 it)  upstream=   3126300 ns/iter (  76 it)  a/b=0.971
+  pair 15 lead=ours     ours=   3070200 ns/iter (  77 it)  upstream=   3055200 ns/iter (  70 it)  a/b=1.005
+  pair 16 lead=upstream ours=   3066300 ns/iter (  79 it)  upstream=   3032100 ns/iter (  76 it)  a/b=1.011
+  pair 17 lead=ours     ours=   3017200 ns/iter (  75 it)  upstream=   2998600 ns/iter (  77 it)  a/b=1.006
+  pair 18 lead=upstream ours=   3158800 ns/iter (  73 it)  upstream=   2997100 ns/iter (  77 it)  a/b=1.054
+  pair 19 lead=ours     ours=   3029200 ns/iter (  77 it)  upstream=   3139900 ns/iter (  69 it)  a/b=0.965
+  pair 20 lead=upstream ours=   3127100 ns/iter (  75 it)  upstream=   3141500 ns/iter (  75 it)  a/b=0.995
+  => median a/b 1.001 [0.960, 1.054]  wins 9/20  z -0.45  ours 742 MB/s  upstream 742 MB/s
+
+== canada / struct-stringify (2251060 bytes)
+  pair  1 lead=ours     ours=   1879600 ns/iter ( 120 it)  upstream=   1882400 ns/iter ( 127 it)  a/b=0.999
+  pair  2 lead=upstream ours=   1875300 ns/iter ( 121 it)  upstream=   1764700 ns/iter ( 129 it)  a/b=1.063
+  pair  3 lead=ours     ours=   1792600 ns/iter ( 132 it)  upstream=   1883000 ns/iter ( 118 it)  a/b=0.952
+  pair  4 lead=upstream ours=   1804800 ns/iter ( 121 it)  upstream=   1841100 ns/iter ( 132 it)  a/b=0.980
+  pair  5 lead=ours     ours=   1838400 ns/iter ( 128 it)  upstream=   1806100 ns/iter ( 122 it)  a/b=1.018
+  pair  6 lead=upstream ours=   1794300 ns/iter ( 134 it)  upstream=   1742600 ns/iter ( 132 it)  a/b=1.030
+  pair  7 lead=ours     ours=   1774700 ns/iter ( 134 it)  upstream=   1804200 ns/iter ( 135 it)  a/b=0.984
+  pair  8 lead=upstream ours=   1791000 ns/iter ( 135 it)  upstream=   1729400 ns/iter ( 134 it)  a/b=1.036
+  pair  9 lead=ours     ours=   1714100 ns/iter ( 134 it)  upstream=   1854500 ns/iter ( 126 it)  a/b=0.924
+  pair 10 lead=upstream ours=   1795400 ns/iter ( 132 it)  upstream=   1820300 ns/iter ( 130 it)  a/b=0.986
+  pair 11 lead=ours     ours=   1796500 ns/iter ( 133 it)  upstream=   1801900 ns/iter ( 125 it)  a/b=0.997
+  pair 12 lead=upstream ours=   1795800 ns/iter ( 131 it)  upstream=   1799500 ns/iter ( 133 it)  a/b=0.998
+  pair 13 lead=ours     ours=   1832700 ns/iter ( 130 it)  upstream=   1806300 ns/iter ( 130 it)  a/b=1.015
+  pair 14 lead=upstream ours=   1802500 ns/iter ( 129 it)  upstream=   1695800 ns/iter ( 128 it)  a/b=1.063
+  pair 15 lead=ours     ours=   1755400 ns/iter ( 132 it)  upstream=   1800000 ns/iter ( 131 it)  a/b=0.975
+  pair 16 lead=upstream ours=   1834300 ns/iter ( 130 it)  upstream=   1801500 ns/iter ( 126 it)  a/b=1.018
+  pair 17 lead=ours     ours=   1802900 ns/iter ( 129 it)  upstream=   1883100 ns/iter ( 127 it)  a/b=0.957
+  pair 18 lead=upstream ours=   1844400 ns/iter ( 129 it)  upstream=   1849300 ns/iter ( 125 it)  a/b=0.997
+  pair 19 lead=ours     ours=   1804800 ns/iter ( 128 it)  upstream=   1883700 ns/iter ( 119 it)  a/b=0.958
+  pair 20 lead=upstream ours=   1925300 ns/iter ( 110 it)  upstream=   1928300 ns/iter ( 109 it)  a/b=0.998
+  => median a/b 0.998 [0.924, 1.063]  wins 13/20  z +1.34  ours 668 MB/s  upstream 667 MB/s
+
+| file | column | ours | upstream | ours/upstream time (median [min, max]) | wins, z |
+|---|---|---:|---:|---:|---:|
+| twitter | dom-parse | ours **466 MB/s** | upstream 469 MB/s | **1.008x** [0.985, 1.231] | 5/20, z = -2.24 |
+| twitter | dom-stringify | ours **1712 MB/s** | upstream 1710 MB/s | **1.000x** [0.939, 1.027] | 10/20, z = +0.00 |
+| twitter | struct-parse | ours **936 MB/s** | upstream 924 MB/s | **0.988x** [0.952, 1.021] | 14/20, z = +1.79 |
+| twitter | struct-stringify | ours **1839 MB/s** | upstream 1780 MB/s | **0.968x** [0.917, 0.991] | 20/20, z = +4.47 |
+| citm_catalog | dom-parse | ours **712 MB/s** | upstream 721 MB/s | **1.005x** [0.936, 1.038] | 9/20, z = -0.45 |
+| citm_catalog | dom-stringify | ours **1212 MB/s** | upstream 1213 MB/s | **1.000x** [0.961, 1.029] | 9/20, z = -0.45 |
+| citm_catalog | struct-parse | ours **1396 MB/s** | upstream 1393 MB/s | **0.993x** [0.954, 1.066] | 14/20, z = +1.79 |
+| citm_catalog | struct-stringify | ours **2020 MB/s** | upstream 2030 MB/s | **0.995x** [0.917, 1.091] | 12/20, z = +0.89 |
+| canada | dom-parse | ours **400 MB/s** | upstream 402 MB/s | **1.002x** [0.948, 1.050] | 9/20, z = -0.45 |
+| canada | dom-stringify | ours **967 MB/s** | upstream 970 MB/s | **1.003x** [0.965, 1.038] | 8/20, z = -0.89 |
+| canada | struct-parse | ours **742 MB/s** | upstream 742 MB/s | **1.001x** [0.960, 1.054] | 9/20, z = -0.45 |
+| canada | struct-stringify | ours **668 MB/s** | upstream 667 MB/s | **0.998x** [0.924, 1.063] | 13/20, z = +1.34 |
+
+method: in-process paired A/B, one binary, both arms linked; lead alternated per pair (ABBA); pairs=20; window=250 ms per arm-sample, statistic=min per-iteration time in the window, verdict=median of paired ratios + paired wins with z; clock=std::time::Instant (QPC on Windows); pinned=cpu2/High; allocator=system (both arms; as-shipped rows are a separate table); isa=scalar (no kernels wired at M0); work parity: identical input bytes, output length asserted equal per pair for serde_json-shaped arms; stringify buffers pre-sized and cleared (growth excluded); competitors: simd-json input copy excluded from the timed region; machine=windows x86_64 ; commit=b3df966
