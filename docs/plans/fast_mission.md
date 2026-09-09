@@ -184,35 +184,35 @@ Per the house scaffold (`building-the-new-internet` §2). Names final unless the
 
 ```
 rusty_json_turbo/                      # git: history-preserving clone of serde-rs/json (§9.2)
-├── Cargo.toml                         # workspace; pins live here once; unsafe_code = "deny"
+├── Cargo.toml                         # THE LIBRARY (package rusty_json_turbo, lib name serde_json)
+│                                      # + the workspace table; pins live here once (§9.11)
+├── src/  tests/  build.rs  fuzz/      # upstream's tree, unmoved, so `git merge upstream/master` is plain
 ├── docs/plans/fast_mission.md         # this file
-├── docs/UPSTREAM-CHANGES.md           # every divergence from upstream, with its brick and ledger row
-├── NOTICE.md                          # upstream attribution (dtolnay et al.), licences unchanged
+├── docs/UPSTREAM-CHANGES.md           # every divergence from upstream, one row each, with its ledger row
+├── NOTICE.md                          # upstream attribution (Tryzelaar, Tolnay et al.), licences unchanged
 ├── crates/
-│   ├── rusty_json_turbo/              # LIBRARY. The serde_json fork, API-identical, PUBLISHED.
-│   │                                  # #![forbid(unsafe_code)] — upstream's 12 unsafe sites are
-│   │                                  # moved behind -accel or replaced with safe code (M2 census).
-│   │                                  # no_std + alloc floor kept. Zero new dependencies.
-│   ├── rusty_json_turbo-accel/        # LIBRARY. The unsafe island: SSE2/AVX2 (v1.0), NEON/simd128
+│   ├── rusty_json_turbo-accel/        # (M3) LIBRARY. The unsafe island: SSE2/AVX2 (v1.0), NEON/simd128
 │   │                                  # (v1.x) kernels + the scalar twins they are gated against.
 │   │                                  # Every block: // SAFETY:, *_matches_scalar test, census counter.
 │   ├── rusty_json_turbo-cli/          # DELIVERABLE `rjson`. Allocator declared HERE (seam).
-│   ├── rusty_json_turbo-bench/        # Harness, never published: upstream + simd-json + sonic-rs arms
-│   │                                  # behind features; the compliant paired A/B; ledger writer.
-│   └── rusty_json_turbo-alloc/        # The rusty_alloc seam — one crate, one pin (=1.1.6).
-├── corpus/                            # §7: JSONCORP inputs (or fetch script + hashes), LEDGER.md
-├── fuzz/                              # cargo-fuzz: from_str, from_slice, from_reader, Value round-trip,
-│                                      # RawValue, StreamDeserializer, to_string(Value)
-└── tools/                             # pinvs.ps1 port, asm census scripts, llvm-lines fixture
+│   ├── rusty_json_turbo-bench/        # Harness, never published: links upstream serde_json 1.0.151 as
+│   │                                  # the ORACLE (tests/oracle.rs = the differential gate) and runs the
+│   │                                  # paired ABBA benchmark; simd-json + sonic-rs behind `competitors`.
+│   └── rusty_json_turbo-alloc/        # The rusty_alloc seam — one crate, one pin (=2.0.4).
+├── corpus/                            # §7: JSONCORP data, HASHES.txt, fetch.ps1, LEDGER.md, runs/ (ignored)
+├── scripts/check-ascii-rs.sh          # house lint
+└── tools/pinbench.ps1                 # pinned, High-priority runner for rjson-bench (the pinvs shape)
 
-../serde/                              # SEPARATE REPO: remade-with-rust/serde, branch `turbo`,
+../serde/                              # SEPARATE REPO: Remade-With-Rust/serde, branch `turbo`,
                                        # crates serde, serde_core, serde_derive unchanged in name,
                                        # consumed by [patch.crates-io] in this workspace and in apps.
 ```
 
-Rules the layout enforces: `#[global_allocator]` only in `rjson`; the library is
-`forbid(unsafe_code)` and `-accel` is the only crate that lifts it; every capability is an op
-callable by CLI, test and agent; the bench crate is the only place a competitor crate exists.
+Rules the layout enforces: `#[global_allocator]` only in `rjson`; the library takes
+`forbid(unsafe_code)` at M2 and `-accel` is then the only crate that lifts it (at M0 the root
+crate carries upstream's 12 sites under a crate-level `unsafe_code = "allow"`, and the
+workspace denies it everywhere else); every capability is an op callable by CLI, test and
+agent; the bench crate is the only place a competitor crate or the oracle exists.
 
 Design notes the sibling campaigns paid for, applied here:
 
@@ -249,14 +249,20 @@ semver-stable from 1.0:
   profiler (whitespace / string / number / structure / value-build / write-escape /
   write-number), ZST when the feature is off.
 
-CLI `rjson` (never shadows `jq`; consumer #1 and never the only one):
+CLI `rjson` (never shadows `jq`; consumer #1 and never the only one; links no oracle and
+no competitor, so it stays the deliverable shape):
 
-`rjson validate <file>` · `rjson pretty` / `rjson minify` (`to_writer_pretty` /
-`to_writer`, byte-gated against upstream) · `rjson bench --cell <corpus>,<column> [--arm
-ours|upstream|simd-json|sonic-rs] [--pairs N]` (prints the §7.1 method line with every
-number) · `rjson census <file>` (kernel reach + allocs, a first-class user-visible op) ·
-`rjson diff-oracle <file|dir>` (the differential gate as a command: bytes, `Value`, error
-text, float bits) · `rjson isa`.
+`rjson validate <file|->` · `rjson pretty` / `rjson minify` (`to_writer_pretty` /
+`to_writer`, byte-gated against upstream) · `rjson isa` · (M1) `rjson census <file>` (kernel
+reach + allocs, a first-class user-visible op).
+
+Harness binary `rjson-bench` (the crate that links upstream; never published):
+
+`rjson-bench bench --all | --cell <file>,<column> [--arms ours,upstream|simd-json|sonic-rs]
+[--pairs N] [--window-ms W]` (prints the §7.1 method line with every table) · `rjson-bench
+null ...` (an arm against itself: the floor) · `rjson-bench diff-oracle <file|dir>...` (the
+differential gate as a command: bytes, `Value`, error text + line/col, float bits, stream
+offsets) · `rjson-bench list`. Always through `tools/pinbench.ps1`, which pins and labels.
 
 ---
 
@@ -507,7 +513,23 @@ never in static instruction count — the census counter, not the `.s`, decides 
 
 ---
 
-## 9. Decisions — recommendations for the owner to ratify
+## 9. Decisions — ratified by the owner, 2026-09-09 ("remarkable work, hammer M0 to completion")
+
+Decisions 1–10 below were written as recommendations and ratified by the owner's
+instruction to complete M0 on them; decision 11 was made during M0 and is recorded here.
+
+11. **Layout and library name — RESOLVED at M0.** The upstream crate stays at the workspace
+    **root** (`src/`, `tests/`, `build.rs`, `fuzz/` unmoved) with the house crates under
+    `crates/`, so `git merge upstream/master` is a plain merge — a deliberate deviation from
+    the `crates/<name>` scaffold. The package is `rusty_json_turbo` (0.1.0, 0.x until the
+    hardening gate says 1.0.0) and the **library target keeps the crate name `serde_json`**
+    (the rustls-webpki precedent: package `rustls-webpki`, lib `webpki`), so upstream's tests
+    and doctests compile untouched and a consumer's `use serde_json::…` is the whole
+    migration; the `serde_json = { package = "rusty_json_turbo" }` spelling also works. The
+    oracle (`tests/oracle.rs`) lives in the bench crate, the only crate that links upstream.
+    Measured cost of the M0 build: none. Recorded cost: `UPSTREAM-CHANGES.md` must be kept
+    per commit, and three MSRV-gated clippy lints in upstream code needed one `allow` and
+    two `repeat_n` rewrites (behaviour-identical, gated by the oracle).
 
 1. **Naming.** Crate and repo `rusty_json_turbo` (crates.io: free; `rusty_json` is taken by
    an unrelated crate). CLI `rjson` (does not shadow `jq`; matches `rzstd`/`rxmlint`/

@@ -5,9 +5,12 @@
 # do the in-process ABBA pairing. On this box (i7-14650HX, 8P+8E) logical CPUs
 # 0-15 are the P-core threads; the default pin is CPU 2.
 #
-#   powershell -File tools/pinbench.ps1 -- bench --all --pairs 20
-#   powershell -File tools/pinbench.ps1 -Cpu 4 -- null --all
-#   powershell -File tools/pinbench.ps1 -Exe target\release\rjson-bench.exe -- bench --cell twitter,dom-parse
+#   powershell -File tools/pinbench.ps1 -Bench "bench --all --pairs 20"
+#   powershell -File tools/pinbench.ps1 -Cpu 4 -Bench "null --all"
+#   powershell -File tools/pinbench.ps1 -Exe target\release\rjson-bench.exe -Out corpus\runs\x.txt -Bench "bench --cell twitter,dom-parse"
+#
+# The bench command line is ONE quoted string: PowerShell's -File binder treats
+# `--` and GNU-style `--flags` as (ambiguous) parameter names and refuses them.
 #
 # The wrapper passes `--pinned cpu<N>/High` so the bench echoes the pin into its
 # method line, and the bench sleeps a settle interval before the first number so
@@ -20,12 +23,13 @@ param(
     # Where the bench's stdout goes. A child started with -NoNewWindow does not
     # reliably follow a redirected parent stdout, so the file is explicit.
     [string]$Out = "",
-    [Parameter(ValueFromRemainingArguments = $true)][string[]]$BenchArgs
+    # The rjson-bench command line, e.g. "null --all --pairs 20".
+    [string]$Bench = ""
 )
 
 $ErrorActionPreference = 'Stop'
-if ($BenchArgs -and $BenchArgs[0] -eq '--') { $BenchArgs = @($BenchArgs | Select-Object -Skip 1) }
-if (-not $BenchArgs) { "usage: pinbench.ps1 [-Cpu N] [-Exe path] [-Out file] -- <bench|null> args..."; exit 2 }
+$BenchArgs = @($Bench -split '\s+' | Where-Object { $_ })
+if (-not $BenchArgs) { "usage: pinbench.ps1 [-Cpu N] [-Exe path] [-Out file] -Bench '<bench|null> args...'"; exit 2 }
 if (-not (Test-Path $Exe)) { "error: $Exe not found (cargo build --release -p rusty_json_turbo-bench [--features competitors])"; exit 2 }
 
 $mask = [IntPtr]([int64]1 -shl $Cpu)
