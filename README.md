@@ -28,9 +28,8 @@ public API the house ships.
 
 ## The headline
 
-**Status: M0 complete (scaffold, oracle, harness, baseline).** There is no
-performance claim on this page yet: at M0 the fork is upstream's code, and the
-ledger says so to within its floor. What exists today:
+**Status: the instruments are built and the first brick has landed.** What
+exists today:
 
 - **The fork**, at serde_json 1.0.151 (`afdf6fc`), unchanged in behaviour.
   Every upstream test passes against it.
@@ -44,6 +43,11 @@ ledger says so to within its floor. What exists today:
   arms alternating lead, a null arm for the floor, a method line on every
   table. Numbers land in [`corpus/LEDGER.md`](corpus/LEDGER.md) and nowhere
   else first.
+- **The instruments.** A content census that counts where a document's bytes
+  actually go, a scan-only ceiling that bounds every value-construction change,
+  and deterministic work counters with an A/B knob — so a change can be decided
+  by counting the work it removed, on a machine too busy to trust a clock.
+- **The first brick**, below.
 - **The plan.** [`docs/plans/fast_mission.md`](docs/plans/fast_mission.md):
   the brick catalog, the gates, the milestones, the decisions.
 
@@ -59,10 +63,10 @@ ledger says so to within its floor. What exists today:
 
 ### Performance -- measured rather than asserted
 
-No number enters this README without a method line. The fork's own JSON code is
-still upstream's, so **there is no claim yet that this crate is faster than
-serde_json** -- that is what the brick campaign is for, and each brick's ledger
-row lands before its sentence here.
+No number enters this README without a method line, and each brick's ledger row
+lands before its sentence here. The campaign has just started: one brick is in,
+so the honest summary is "measurably less work on the parsing path, not yet a
+headline speed claim against serde_json".
 
 The M0 baseline is in [`corpus/LEDGER.md`](corpus/LEDGER.md) with its pin,
 pairs, window, null-arm floor and machine: upstream against itself (the floor,
@@ -119,18 +123,18 @@ open question rather than an extrapolation.</sub>
 
 #### Table 2 — the upgrades that go on top
 
-These are changes to the JSON code, and **none has landed**: this crate is
-still upstream's parser. The table is the roadmap and the priority order, not a
-claim. Each row ships only with a measured ledger entry and a byte-identical
-gate, and any row that does not pay is reverted with the reason recorded. The
-two rows marked *repriced* were re-ranked by measurement **before** being
-built, which is the point of having instruments first.
+Changes to the JSON code itself. **One has landed.** Each row ships only with a
+measured ledger entry and a byte-identical gate, and any row that does not pay
+is reverted with the reason recorded. The rows marked *repriced* or *promoted*
+were re-ranked by measurement **before** being built, which is the whole point
+of having instruments first.
 
 | Upgrade | Targets | Mechanism | Status |
 |---|---|---|:--:|
+| **Whitespace off the per-byte path** | every token boundary | skip a whitespace run in one walk of the slice instead of a `Result<Option<u8>>` round trip per byte | ✅ **landed** — see below |
+| Wide whitespace scan | pretty-printed input | 8-byte SWAR, then an SSE2/AVX2 twin with the scalar loop kept as the oracle | **priced by the brick above**: four fifths of the whitespace cost is still on the table |
 | Bulk `Value` map build | DOM parse | build the map from a sorted vector instead of inserting per entry; reserve on sequences | **promoted** — measured allocation-bound, ~1 alloc per 31 input bytes |
 | Arena `Value` (additional type) | DOM parse | bump-allocated nodes, flat objects, interned keys — the shape that gives the fastest competitor its 1.5–3.6x DOM lead | planned, v1.x |
-| SIMD whitespace skip | every token boundary | 8-byte SWAR, then an SSE2/AVX2 twin with the scalar loop kept as oracle | planned |
 | SIMD string scan | string-heavy input | 16/32-byte twin of the existing 8-byte SWAR quote/backslash/control scan | planned |
 | Escape-mask writer | stringify | per-chunk "needs escape" mask, one write per clean run | planned |
 | 8-digit SWAR integer parse | number-heavy input | validate and convert eight ASCII digits at a time, per-digit tail | planned |
@@ -139,6 +143,34 @@ built, which is the point of having instruments first.
 | ASCII fast-path UTF-8 validation | `from_slice` | validate the ASCII run wide, walk only non-ASCII tails | planned |
 | Sink specialisation | stringify | fold separators into adjacent writes; write integers and floats into spare capacity | *repriced* — cannot win by removing allocations (there are none); must win on write-call count |
 | Correctly-rounded float parse | float-heavy input | core's Eisel-Lemire, replacing the vendored bignum path | planned, v1.x, opt-in (it changes output) |
+
+##### Landed: whitespace off the per-byte path
+
+`citm_catalog.json` is **71.9% whitespace**, and skipping it was **36% of the
+time to parse that file into a `Value`** — measured, not guessed, by running
+the same document with the skippable whitespace removed. It was going through
+`peek()`/`discard()` one byte at a time. Now a reader over a contiguous buffer
+walks the run once.
+
+| | peek calls before | after | removed |
+|---|---:|---:|---:|
+| citm_catalog, DOM parse | 1,587,979 | 141,319 | **−91.1%** |
+| twitter, DOM parse | 250,193 | 11,958 | **−95.2%** |
+| canada, DOM parse | 2,751,947 | 2,194,321 | **−20.3%** |
+
+<sub>Counting the work removed is the primary evidence, because it is exact,
+needs one run, and does not care how busy the machine is. It reconciles to the
+byte on all three files: *peeks removed = whitespace runs + whitespace bytes*.
+That exactness turned up something the byte census had not — the saving is one
+`peek` per whitespace **check**, not per whitespace byte, so `canada.json` loses
+557,626 peek calls despite containing 33 whitespace bytes in 2.25 MB. Minified
+documents benefit too. On the clock, in a same-binary A/B (one env var between
+the arms, so the two arms cannot differ by code layout): `citm_catalog` scan
+**1.168x** in 15 of 15 paired runs, struct parse 1.057x, `twitter` scan 1.055x —
+while the four stringify cells, which never reach this code, did not move. DOM
+parse is under-resolved rather than refuted: the machine was throttled to
+roughly 60% of its M0 speed all session, which the ledger records. Byte-identical
+throughout: upstream's suite, the oracle, and a 300,000-case differential soak.</sub>
 
 ## What is this?
 
@@ -294,6 +326,7 @@ target/release/rjson-bench diff-oracle path/to/*.json   # the gate, on your own 
 - [ ] **M1** -- instruments, S4 house payloads, fuzz targets, ceiling probes, ranked worklist
   <br><sub>done: allocation census, `solo`/`census` verbs, the cross-binary paired runner, seven fuzz targets, and the house-allocator experiment above</sub>
 - [ ] **M2** -- safe byte-identical bricks; core takes `forbid(unsafe_code)`
+  <br><sub>first brick landed: whitespace off the per-byte path</sub>
 - [ ] **M3** -- the `-accel` island: SSE2/AVX2 whitespace, string, escape and ASCII kernels
 - [ ] **M4** -- the serde fork earns its keep: shared identifier matcher, field-index handshake
 - [ ] **M5** -- the campaign to the G2 speed gates
