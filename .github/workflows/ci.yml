@@ -171,6 +171,13 @@ jobs:
   # least keep building, including the differential one against upstream.
   fuzz:
     runs-on: ubuntu-latest
+    # `rust-toolchain.toml` pins stable, and a toolchain file beats the version
+    # the action selected -- so cargo-fuzz's `-Z` flags land on stable and the
+    # job dies with "the option `Z` is only accepted on the nightly compiler".
+    # RUSTUP_TOOLCHAIN is what overrides the file. (Same trap as a `targets:`
+    # given to the action, which also lands on stable rather than the pin.)
+    env:
+      RUSTUP_TOOLCHAIN: nightly
     steps:
       - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@nightly
