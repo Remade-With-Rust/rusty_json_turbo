@@ -17,20 +17,33 @@
 param(
     [int]$Cpu = 2,
     [string]$Exe = "target\release\rjson-bench.exe",
+    # Where the bench's stdout goes. A child started with -NoNewWindow does not
+    # reliably follow a redirected parent stdout, so the file is explicit.
+    [string]$Out = "",
     [Parameter(ValueFromRemainingArguments = $true)][string[]]$BenchArgs
 )
 
 $ErrorActionPreference = 'Stop'
-if ($BenchArgs -and $BenchArgs[0] -eq '--') { $BenchArgs = $BenchArgs[1..($BenchArgs.Count - 1)] }
+if ($BenchArgs -and $BenchArgs[0] -eq '--') { $BenchArgs = @($BenchArgs | Select-Object -Skip 1) }
+if (-not $BenchArgs) { "usage: pinbench.ps1 [-Cpu N] [-Exe path] [-Out file] -- <bench|null> args..."; exit 2 }
 if (-not (Test-Path $Exe)) { "error: $Exe not found (cargo build --release -p rusty_json_turbo-bench [--features competitors])"; exit 2 }
 
 $mask = [IntPtr]([int64]1 -shl $Cpu)
-$argv = @($BenchArgs[0]) + @('--pinned', "cpu$Cpu/High") + $BenchArgs[1..($BenchArgs.Count - 1)]
+$rest = @($BenchArgs | Select-Object -Skip 1)
+$argv = @($BenchArgs[0]) + @('--pinned', "cpu$Cpu/High") + $rest
 $commit = (git rev-parse --short HEAD 2>$null)
 if ($commit) { $argv += @('--commit', $commit) }
+$dirty = (git status --porcelain 2>$null)
+if ($dirty) { $argv += @('--commit', "$commit-dirty") }
 
 "pinbench: $Exe $($argv -join ' ')"
-$p = Start-Process -FilePath $Exe -ArgumentList $argv -PassThru -NoNewWindow
+if ($Out) {
+    $dir = Split-Path -Parent $Out
+    if ($dir -and -not (Test-Path $dir)) { New-Item -ItemType Directory -Path $dir | Out-Null }
+    $p = Start-Process -FilePath $Exe -ArgumentList $argv -PassThru -NoNewWindow -RedirectStandardOutput $Out
+} else {
+    $p = Start-Process -FilePath $Exe -ArgumentList $argv -PassThru -NoNewWindow
+}
 $null = $p.Handle          # cache it, or the properties read empty after exit
 $p.ProcessorAffinity = $mask
 $p.PriorityClass = 'High'
