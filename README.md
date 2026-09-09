@@ -1,3 +1,9 @@
+### In The Wild with 10 Active Installs
+> [RAG Converter](https://ragconverter.com) uses `rusty_json_turbo` for JSON.
+> It makes personal and work files AI-readable without them leaving the machine:
+> the whole conversion runs as WebAssembly in the browser tab, with nothing
+> uploaded and nothing to install.
+
 # rusty_json_turbo
 
 [![CI](https://github.com/Remade-With-Rust/rusty_json_turbo/actions/workflows/ci.yml/badge.svg)](https://github.com/Remade-With-Rust/rusty_json_turbo/actions/workflows/ci.yml)
