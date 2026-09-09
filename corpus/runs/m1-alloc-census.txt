@@ -1,0 +1,31 @@
+=== census: system allocator ===
+allocator=system (counting)
+file           column                 allocs    alloc_bytes   reallocs      frees        bytes
+twitter        dom-parse               20834        2071269         11          1       646995
+twitter        dom-stringify               0              0          0          0       466906
+twitter        struct-parse             2762         371567         11          1       646995
+twitter        struct-stringify            0              0          0          0       477706
+citm_catalog   dom-parse               39339        7681413       1671          1      1777672
+citm_catalog   dom-stringify               0              0          0          0       500299
+citm_catalog   struct-parse             2544         201568       1671          1      1777672
+citm_catalog   struct-stringify            0              0          0          0       500299
+canada         dom-parse               56061        9754170       1622          0      2251060
+canada         dom-stringify               0              0          0          0      2063469
+canada         struct-parse              485         668842       1622          0      2251060
+canada         struct-stringify            0              0          0          0      1203993
+
+=== census: rusty_alloc ===
+allocator=rusty_alloc 2.0.4 (counting)
+file           column                 allocs    alloc_bytes   reallocs      frees        bytes
+twitter        dom-parse               20834        2071269         11          1       646995
+twitter        dom-stringify               0              0          0          0       466906
+twitter        struct-parse             2762         371567         11          1       646995
+twitter        struct-stringify            0              0          0          0       477706
+citm_catalog   dom-parse               39339        7681413       1671          1      1777672
+citm_catalog   dom-stringify               0              0          0          0       500299
+citm_catalog   struct-parse             2544         201568       1671          1      1777672
+citm_catalog   struct-stringify            0              0          0          0       500299
+canada         dom-parse               56061        9754170       1622          0      2251060
+canada         dom-stringify               0              0          0          0      2063469
+canada         struct-parse              485         668842       1622          0      2251060
+canada         struct-stringify            0              0          0          0      1203993

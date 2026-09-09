@@ -47,6 +47,13 @@ jobs:
           done
       - name: Differential oracle (byte-identical to upstream serde_json)
         run: cargo test -p rusty_json_turbo-bench --locked -- --nocapture
+      # The soak is the same question as fuzz/oracle_diff, asked on every runner
+      # and every OS: libFuzzer needs nightly and a matching sanitizer runtime,
+      # this needs neither. Seeded, so a failure here reproduces exactly.
+      - name: Differential soak (300k generated + mutated + numeric cases)
+        run: cargo test -p rusty_json_turbo-bench --release --locked --test soak -- --nocapture
+        env:
+          RJT_SOAK: 100000
       - name: Differential oracle, per feature (both arms on)
         shell: bash
         run: |
@@ -133,7 +140,9 @@ jobs:
       - name: cargo-deny
         uses: EmbarkStudios/cargo-deny-action@v2
 
-  # The harness with the competitor arms, in the configuration the ledger uses.
+  # The harness in every configuration the ledger takes numbers from. Each is a
+  # separate BINARY (the allocator is a link-time property), so each has to keep
+  # compiling or a measurement arm silently disappears.
   harness:
     runs-on: ubuntu-latest
     steps:
@@ -141,6 +150,33 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - run: cargo check -p rusty_json_turbo-bench --all-targets --locked --features competitors
+      - run: cargo check -p rusty_json_turbo-bench --all-targets --locked --features rusty-alloc
+      - run: cargo check -p rusty_json_turbo-bench --all-targets --locked --features rusty-alloc-secure
+      - run: cargo check -p rusty_json_turbo-bench --all-targets --locked --features profile
+      - name: The allocation census runs and reports non-zero work
+        run: |
+          cargo run -p rusty_json_turbo-bench --release --locked --features profile -- \
+            census --cell twitter,dom-parse --cell twitter,dom-stringify | tee census.txt
+          grep -qE 'dom-parse +[0-9]{4,}' census.txt \
+            || { echo '::error::census reported no allocations for a DOM parse'; exit 1; }
+      # A census build must refuse to be used as a timing instrument.
+      - name: The census build refuses to be quoted
+        run: |
+          cargo run -p rusty_json_turbo-bench --release --locked --features profile -- \
+            bench --cell twitter,dom-parse --pairs 1 --window-ms 10 | tee taxed.txt
+          grep -q 'COUNTING BUILD' taxed.txt \
+            || { echo '::error::a counting build did not flag its method line'; exit 1; }
+
+  # The fuzz targets are the standing gate on untrusted input; they must at
+  # least keep building, including the differential one against upstream.
+  fuzz:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@nightly
+      - uses: Swatinem/rust-cache@v2
+      - uses: dtolnay/install@cargo-fuzz
+      - run: cargo fuzz check
 
   # Catches a broken manifest or a file the package would ship without --
   # before `cargo publish` does, not after.

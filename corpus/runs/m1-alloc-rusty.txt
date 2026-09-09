@@ -1,0 +1,22 @@
+﻿pinvs: system=target/b-sys/release/rjson-bench.exe (489D8D816B069C9B)
+pinvs: rusty_alloc=target/b-rusty/release/rjson-bench.exe (8D085FD13E8F64EF)
+pinvs: cpu=2 priority=High pairs=20 bench='solo --all --arm ours'
+
+| file | column | system | rusty_alloc | system/rusty_alloc time (median [min, max]) | wins, z |
+|---|---|---:|---:|---:|---:|
+| canada | dom-parse | system **376 MB/s** | rusty_alloc 499 MB/s | **1.320x** [1.267, 1.584] | 0/20, z = -4.47 |
+| canada | dom-stringify | system **934 MB/s** | rusty_alloc 983 MB/s | **1.047x** [0.985, 1.169] | 1/20, z = -4.02 |
+| canada | struct-parse | system **707 MB/s** | rusty_alloc 752 MB/s | **1.061x** [1.001, 1.174] | 0/20, z = -4.47 |
+| canada | struct-stringify | system **671 MB/s** | rusty_alloc 670 MB/s | **1.011x** [0.963, 1.047] | 8/20, z = -0.89 |
+| citm_catalog | dom-parse | system **684 MB/s** | rusty_alloc 1,004 MB/s | **1.486x** [1.417, 1.747] | 0/20, z = -4.47 |
+| citm_catalog | dom-stringify | system **1,172 MB/s** | rusty_alloc 1,168 MB/s | **0.990x** [0.945, 1.043] | 12/20, z = +0.89 |
+| citm_catalog | struct-parse | system **1,326 MB/s** | rusty_alloc 1,465 MB/s | **1.121x** [1.038, 1.186] | 0/20, z = -4.47 |
+| citm_catalog | struct-stringify | system **1,785 MB/s** | rusty_alloc 1,901 MB/s | **1.070x** [1.015, 1.117] | 0/20, z = -4.47 |
+| twitter | dom-parse | system **358 MB/s** | rusty_alloc 724 MB/s | **1.995x** [1.846, 2.185] | 0/20, z = -4.47 |
+| twitter | dom-stringify | system **1,443 MB/s** | rusty_alloc 1,410 MB/s | **0.976x** [0.937, 1.021] | 18/20, z = +3.58 |
+| twitter | struct-parse | system **880 MB/s** | rusty_alloc 1,024 MB/s | **1.168x** [1.083, 1.221] | 0/20, z = -4.47 |
+| twitter | struct-stringify | system **1,497 MB/s** | rusty_alloc 1,489 MB/s | **1.004x** [0.949, 1.062] | 10/20, z = +0.00 |
+
+method: PROCESS-level paired A/B between two binaries (a global allocator is one per program, so it cannot be an in-process arm); each binary reports its own per-cell time via json-bench solo so process launch is outside the number; leading binary alternated per pair (ABBA); pairs=20; statistic=min per-iteration time in each arm-sample window; verdict=median of paired ratios + paired wins with z; pinned=cpu2/High, affinity read back per run; work parity: output/input bytes asserted equal per cell per pair; machine=Intel64 Family 6 Model 183 Stepping 1, GenuineIntel
+A: BINARY|system|false|uncommitted|windows|x86_64
+B: BINARY|rusty_alloc 2.0.4|false|uncommitted|windows|x86_64

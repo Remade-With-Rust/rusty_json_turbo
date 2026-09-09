@@ -124,6 +124,66 @@ impl Fixture for crate::canada::Canada {}
 impl Fixture for crate::citm_catalog::CitmCatalog {}
 impl Fixture for crate::twitter::Twitter {}
 
+/// One `ours` op for a cell, with the allocations it made.
+///
+/// Exactly one iteration, so the count is per-operation and not an average.
+/// Returns `None` for the census on a build without the counting wrapper.
+pub fn census_once(
+    file: File,
+    column: Column,
+    input: &[u8],
+) -> (usize, Option<crate::alloc_arm::Census>) {
+    match file {
+        File::Canada => census_typed::<crate::canada::Canada>(column, input),
+        File::CitmCatalog => census_typed::<crate::citm_catalog::CitmCatalog>(column, input),
+        File::Twitter => census_typed::<crate::twitter::Twitter>(column, input),
+    }
+}
+
+fn census_typed<T: Fixture>(
+    column: Column,
+    input: &[u8],
+) -> (usize, Option<crate::alloc_arm::Census>) {
+    // The stringify columns build their value OUTSIDE the measured region, as
+    // the timed cells do, so the census counts the same work the clock times.
+    match column {
+        Column::DomParse => {
+            let (v, c) = crate::alloc_arm::measure(|| {
+                let s = std::str::from_utf8(input).unwrap();
+                turbo::from_str::<turbo::Value>(s).unwrap()
+            });
+            drop(v);
+            (input.len(), c)
+        }
+        Column::StructParse => {
+            let (v, c) = crate::alloc_arm::measure(|| {
+                let s = std::str::from_utf8(input).unwrap();
+                turbo::from_str::<T>(s).unwrap()
+            });
+            drop(v);
+            (input.len(), c)
+        }
+        Column::DomStringify => {
+            let dom: turbo::Value = turbo::from_slice(input).unwrap();
+            let mut buf = Vec::with_capacity(input.len());
+            let ((), c) = crate::alloc_arm::measure(|| {
+                buf.clear();
+                turbo::to_writer(&mut buf, &dom).unwrap();
+            });
+            (buf.len(), c)
+        }
+        Column::StructStringify => {
+            let value: T = turbo::from_slice(input).unwrap();
+            let mut buf = Vec::with_capacity(input.len());
+            let ((), c) = crate::alloc_arm::measure(|| {
+                buf.clear();
+                turbo::to_writer(&mut buf, &value).unwrap();
+            });
+            (buf.len(), c)
+        }
+    }
+}
+
 /// Run one (arm, file, column) cell for `window`, returning every iteration.
 pub fn run(arm: Arm, file: File, column: Column, input: &[u8], window: Duration) -> Sample {
     match file {

@@ -22,6 +22,9 @@ path = "src/main.rs"
 turbo = { package = "rusty_json_turbo", path = "../.." }
 # The oracle: upstream serde_json at the exact version this fork tracks.
 serde_json_upstream = { workspace = true }
+# The house allocator, through the seam, for the `rusty-alloc` build arm. Only
+# this binary installs it; the library never does.
+alloc_seam = { package = "rusty_json_turbo-alloc", path = "../rusty_json_turbo-alloc", optional = true }
 # Optional only so the fixture files (verbatim from json-benchmark) can keep
 # their `#[cfg(feature = "serde")]` gates; it is on by default and required.
 serde = { workspace = true, optional = true }
@@ -33,6 +36,16 @@ default = ["serde"]
 serde = ["dep:serde"]
 # The competitor arms. Never on in a shipped artifact; this crate ships nothing.
 competitors = ["dep:simd-json", "dep:sonic-rs"]
+# The house allocator as a BUILD ARM. A global allocator is one per program, so
+# this cannot be a runtime switch: it makes a second binary, compared with the
+# other by tools/pinvs.ps1. `--features rusty-alloc-secure` is the hardened
+# profile (guard pages, encrypted free lists).
+rusty-alloc = ["dep:alloc_seam"]
+rusty-alloc-secure = ["rusty-alloc", "alloc_seam/secure"]
+# The allocation census (a counting wrapper around whichever backend is linked).
+# Deterministic work-parity instrument; taxes every allocation, so a build with
+# it must never produce a timing number.
+profile = []
 # Feature forwarding so the oracle runs with BOTH arms on the same feature.
 preserve_order = ["turbo/preserve_order", "serde_json_upstream/preserve_order"]
 float_roundtrip = ["turbo/float_roundtrip", "serde_json_upstream/float_roundtrip"]

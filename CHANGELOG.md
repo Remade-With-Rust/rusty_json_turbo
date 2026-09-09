@@ -23,6 +23,22 @@ carry their measured numbers and method line, never an adjective.
   ahead on two struct-parse cells, behind on every stringify cell; measured
   without its mandated `target-cpu=native`, stated as a lower bound).
 
+- M1 instruments: an allocation census behind `--features profile` (a counting
+  wrapper around whichever backend is linked, never quoted for timings), the
+  `solo` and `census` verbs on `rjson-bench`, `tools/pinvs.ps1` for
+  process-level paired A/B between two binaries, and the allocator as a build
+  arm (`--features rusty-alloc` / `rusty-alloc-secure`) through the seam.
+- M1 fuzz targets: `from_str`, `from_reader`, `roundtrip`, `raw_value`,
+  `stream`, and `oracle_diff` (ours against upstream on arbitrary bytes,
+  comparing outcome, printed bytes, error text with line/column, and float
+  bits) alongside upstream's `from_slice`.
+- M1-A result in `corpus/LEDGER.md`: with only the house allocator linked and
+  no code change, DOM parse gains 1.46-1.53x (2 s samples; 2.0x at 250 ms) and
+  struct parse 1.07-1.17x, while the four zero-allocation stringify cells are
+  unmoved -- a control the census supplied for free. The oracle passes under
+  `rusty_alloc` and `secure`: no output byte changes. Stated there, and here:
+  this is the allocator's win, not the fork's.
+
 ### Changed
 
 - Nothing in the library's behaviour. The oracle test proves every corpus file,

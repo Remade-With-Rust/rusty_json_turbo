@@ -168,3 +168,231 @@ length for that cell. The lengths were not compared this session (M1 prints both
 | lint | `cargo fmt`, `clippy -D warnings` (default and `--all-features`), ASCII sources, `cargo deny check`, `cargo audit` all clean |
 
 Reverts this session: none (no brick was attempted; M0 is scaffold and instruments).
+
+---
+
+### 2026-09-09 -- M1-A: the house allocator, and nothing else
+
+**The question.** Take the fork exactly as it is -- not one line of JSON code
+changed -- link the house stack's allocator through the seam, and measure. Does
+it move?
+
+**Answer: yes, and by a lot, exactly where the work is allocation.** On the
+conservative probe: **1.53x** on twitter DOM parse, **1.46x** on citm DOM parse,
+1.07x on canada struct parse, and **nothing at all** on the four cells that
+allocate zero times. Read the two caveats under "What this is not" before
+quoting any of it -- in particular, this is the allocator's win, not the fork's.
+
+**Correctness first.** The full oracle (66 corpus documents, 118 edge documents,
+93,893 number tokens) passes under `rusty_alloc` and under `rusty_alloc`
+`secure`: **zero mismatches, no output byte changed**. A speed change that
+altered output would be a bug with good timing.
+
+#### Why this needs a different harness
+
+A `#[global_allocator]` is one per program. It cannot be an in-process arm the
+way `ours` and `upstream` are, so this is a **process-level** paired A/B between
+two binaries (`tools/pinvs.ps1`): each binary reports its own per-cell time via
+`rjson-bench solo`, the leading binary alternates per pair (ABBA), affinity is
+read back on every run, and output bytes are asserted equal per cell per pair.
+The binaries differ only in the seam's feature (`--features rusty-alloc`), and
+carry no competitor arms.
+
+> **Absolute MB/s in this section are NOT comparable with the M0 tables.**
+> Different binaries (no competitor arms linked) and a different regime (a fresh
+> process per sample instead of one long-lived process). The **ratio within each
+> table** is the result; a cross-table absolute comparison is not admissible.
+
+#### The work-parity instrument, and the control it handed us for free
+
+`rjson-bench census --all` on a counting build (`--features profile`, whose
+timings are never quoted) reports allocations per operation. The counts are
+**byte-for-byte identical under both allocators** -- same allocs, same bytes,
+same reallocs -- so the arms do identical work and what differs is the cost of
+each allocation, not how many there are.
+
+| file | column | allocs/op | alloc bytes/op | reallocs/op |
+|---|---|---:|---:|---:|
+| twitter | dom-parse | 20,834 | 2,071,269 | 11 |
+| twitter | struct-parse | 2,762 | 371,567 | 11 |
+| twitter | dom-stringify | **0** | 0 | 0 |
+| twitter | struct-stringify | **0** | 0 | 0 |
+| citm_catalog | dom-parse | 39,339 | 7,681,413 | 1,671 |
+| citm_catalog | struct-parse | 2,544 | 201,568 | 1,671 |
+| citm_catalog | dom-stringify | **0** | 0 | 0 |
+| citm_catalog | struct-stringify | **0** | 0 | 0 |
+| canada | dom-parse | 56,061 | 9,754,170 | 1,622 |
+| canada | struct-parse | 485 | 668,842 | 1,622 |
+| canada | dom-stringify | **0** | 0 | 0 |
+| canada | struct-stringify | **0** | 0 | 0 |
+
+**The four zero-allocation cells are a control we did not have to build.** The
+stringify columns write into a pre-sized, cleared buffer, so they allocate
+nothing and the allocator *cannot* touch them. Whatever they read is the
+cross-binary layout-and-noise band for this pair of binaries -- and any cell
+inside that band is not attributable to the allocator, however good its z-score
+looks.
+
+#### Null arm: the same binary against itself (the floor)
+
+| file | column | sysA | sysB | ratio (median [min, max]) | wins, z |
+|---|---|---:|---:|---:|---:|
+| twitter | dom-parse | 365 MB/s | 369 MB/s | 1.005x [0.902, 1.088] | 10/20, z = +0.00 |
+| twitter | dom-stringify | 1457 MB/s | 1410 MB/s | 0.978x [0.946, 1.045] | 16/20, z = +2.68 |
+| twitter | struct-parse | 890 MB/s | 877 MB/s | 1.001x [0.938, 1.049] | 10/20, z = +0.00 |
+| twitter | struct-stringify | 1488 MB/s | 1485 MB/s | 1.005x [0.915, 1.045] | 8/20, z = -0.89 |
+| citm_catalog | dom-parse | 681 MB/s | 686 MB/s | 1.015x [0.939, 1.072] | 8/20, z = -0.89 |
+| citm_catalog | dom-stringify | 1185 MB/s | 1171 MB/s | 0.998x [0.933, 1.053] | 11/20, z = +0.45 |
+| citm_catalog | struct-parse | 1340 MB/s | 1334 MB/s | 0.998x [0.967, 1.083] | 11/20, z = +0.45 |
+| citm_catalog | struct-stringify | 1788 MB/s | 1782 MB/s | 0.996x [0.950, 1.048] | 13/20, z = +1.34 |
+| canada | dom-parse | 379 MB/s | 373 MB/s | 0.983x [0.945, 1.038] | 12/20, z = +0.89 |
+| canada | dom-stringify | 931 MB/s | 921 MB/s | 0.990x [0.935, 1.050] | 13/20, z = +1.34 |
+| canada | struct-parse | 713 MB/s | 708 MB/s | 1.003x [0.933, 1.062] | 9/20, z = -0.45 |
+| canada | struct-stringify | 667 MB/s | 673 MB/s | 1.011x [0.959, 1.056] | 9/20, z = -0.45 |
+
+Floor: medians 0.978-1.015. One identical-binary cell reads z = +2.68 at a 2.2%
+median, which is the standing reminder that **z alone is not a verdict** -- an
+effect needs a median outside this band as well.
+
+#### system vs rusty_alloc 2.0.4 (20 pairs, 250 ms windows)
+
+`> 1` means **rusty_alloc is faster**. Cells ordered by allocations per op.
+
+| file | column | allocs/op | system | rusty_alloc | ratio (median [min, max]) | wins, z |
+|---|---|---:|---:|---:|---:|---:|
+| canada | dom-parse | 56,061 | 376 MB/s | **499 MB/s** | **1.320x** [1.267, 1.584] | 20/20, z = 4.47 |
+| citm_catalog | dom-parse | 39,339 | 684 MB/s | **1004 MB/s** | **1.486x** [1.417, 1.747] | 20/20, z = 4.47 |
+| twitter | dom-parse | 20,834 | 358 MB/s | **724 MB/s** | **1.995x** [1.846, 2.185] | 20/20, z = 4.47 |
+| twitter | struct-parse | 2,762 | 880 MB/s | **1024 MB/s** | **1.168x** [1.083, 1.221] | 20/20, z = 4.47 |
+| citm_catalog | struct-parse | 2,544 | 1326 MB/s | **1465 MB/s** | **1.121x** [1.038, 1.186] | 20/20, z = 4.47 |
+| canada | struct-parse | 485 | 707 MB/s | 752 MB/s | 1.061x [1.001, 1.174] | 20/20, z = 4.47 |
+| twitter | dom-stringify | **0** | 1443 MB/s | 1410 MB/s | 0.976x [0.937, 1.021] | 2/20, z = -3.58 |
+| citm_catalog | dom-stringify | **0** | 1172 MB/s | 1168 MB/s | 0.990x [0.945, 1.043] | 8/20, z = -0.89 |
+| canada | dom-stringify | **0** | 934 MB/s | 983 MB/s | 1.047x [0.985, 1.169] | 19/20, z = 4.02 |
+| twitter | struct-stringify | **0** | 1497 MB/s | 1489 MB/s | 1.004x [0.949, 1.062] | 10/20, z = +0.00 |
+| citm_catalog | struct-stringify | **0** | 1785 MB/s | 1901 MB/s | 1.070x [1.015, 1.117] | 20/20, z = 4.47 |
+| canada | struct-stringify | **0** | 671 MB/s | 670 MB/s | 1.011x [0.963, 1.047] | 12/20, z = -0.89 |
+
+**The shape is the finding.** Sort by allocation count and the effect sorts with
+it: tens of thousands of allocations buy 1.3-2.0x, a few thousand buy 1.06-1.17x,
+and zero buys nothing consistent. The zero-allocation cells span **0.976x to
+1.070x**, which is this binary pair's layout band -- wider than the same-binary
+null floor, as two different links should be. Two consequences, both binding:
+
+- **canada struct-parse (1.061x) sits inside the layout band** and is therefore
+  not an allocator result, despite 20/20 and z = 4.47. Not claimable.
+- **citm struct-stringify reads 1.070x at 20/20 on a cell that allocates zero
+  times.** The allocator cannot have done that; it is code placement. It is the
+  honest upper bound on the layout component, and it is why the DOM-parse cells
+  (1.32-2.00x, far outside it) are the ones that carry the result.
+
+#### Three-probe confirmation: vary the window, not the seed
+
+The obvious alternative explanation is warm-up: a fresh process per sample, so
+maybe rusty_alloc merely reaches steady state sooner. Probe it by making each
+sample **10x longer** -- if the effect is a start-up artifact it collapses.
+
+| file | column | allocs/op | 250 ms, 20 pairs | 250 ms, 10 pairs | **2000 ms, 10 pairs** |
+|---|---|---:|---:|---:|---:|
+| twitter | dom-parse | 20,834 | 1.995x | 1.979x | **1.532x** [1.471, 1.645] |
+| citm_catalog | dom-parse | 39,339 | 1.486x | 2.115x | **1.462x** [1.392, 1.503] |
+| canada | struct-parse | 485 | 1.061x | 1.097x | **1.072x** [1.041, 1.095] |
+| twitter | struct-stringify | **0** | 1.004x | 0.988x | **0.977x** [0.882, 1.007] |
+
+It does not collapse. It **shrinks and stabilises**: twitter DOM parse goes
+1.99x -> 1.53x when each sample runs 10x longer, so roughly a quarter of the
+short-window figure was per-process warm-up and the rest is steady state. The
+zero-allocation control holds at ~0.98x throughout. The 2 s column is the
+conservative number and the one to quote.
+
+The middle column also earns its place: citm DOM parse read **2.115x** there
+because that run's *system* arm read 459 MB/s against 684 and 697 in the other
+two. The rusty_alloc arm read 985/1004/1013 MB/s across all three. **The system
+allocator is not merely slower here, it is markedly less repeatable** -- which is
+itself a result for anything latency-sensitive.
+
+#### rusty_alloc `secure` (guard pages, encrypted free lists)
+
+| file | column | allocs/op | system | secure | ratio | wins, z |
+|---|---|---:|---:|---:|---:|---:|
+| twitter | dom-parse | 20,834 | 343 MB/s | **665 MB/s** | **1.945x** [1.807, 2.953] | 20/20, z = 4.47 |
+| citm_catalog | dom-parse | 39,339 | 667 MB/s | **886 MB/s** | **1.452x** [1.327, 3.133] | 20/20, z = 4.47 |
+| canada | dom-parse | 56,061 | 356 MB/s | **463 MB/s** | **1.325x** [0.807, 2.228] | 19/20, z = 4.02 |
+| twitter | struct-parse | 2,762 | 848 MB/s | **975 MB/s** | **1.151x** [1.059, 1.789] | 20/20, z = 4.47 |
+| citm_catalog | struct-parse | 2,544 | 1289 MB/s | **1377 MB/s** | **1.082x** [1.003, 1.224] | 20/20, z = 4.47 |
+| canada | struct-parse | 485 | 675 MB/s | 692 MB/s | 1.051x [0.731, 1.142] | 17/20, z = 3.13 |
+
+The hardened profile keeps essentially the whole win (1.95x / 1.45x / 1.33x on
+DOM parse against 2.00x / 1.49x / 1.32x). Its per-pair spread is much wider
+(one cell ranges to 3.13x), so its **median** is the usable statistic. Stringify
+cells omitted: zero allocations, nothing to measure. Practical reading: on this
+workload the safety posture is close to free.
+
+#### What this is not
+
+1. **This is not a win of rusty_json_turbo over serde_json.** At M1 the fork's
+   JSON code is upstream's, byte for byte. Upstream serde_json linked against
+   `rusty_alloc` would get the same speedup. It is a win *of the house stack*,
+   available to anyone who adopts the allocator, and it does **not** count
+   toward gate G2, which compares like-for-like allocators.
+2. **This is a Windows result.** Rust's `System` allocator here is `HeapAlloc`
+   on the process heap; a mimalloc-architecture allocator retaining freed blocks
+   in its own free lists is exactly the design that beats it on
+   allocate-many-small-then-drop workloads. glibc's malloc has tcache and fastbins
+   and should close much of the gap, so the Linux number is a genuinely open
+   question and an M1 follow-up, not something to extrapolate.
+3. The measurement excludes the **drop** of the parsed value (the timed region
+   ends before it, as json-benchmark's does). Deallocation is real work a
+   consumer pays, and it is not in these numbers -- if anything that
+   understates a free-list allocator's advantage.
+
+#### What it changes about the mission
+
+- **Allocation is the dominant cost of DOM parse, now measured twice.** 20,834
+  allocations for a 632 KB document is roughly one allocation every 31 input
+  bytes. The plan's B10 (bulk map build, reserve on `visit_seq`) and the v1.x
+  arena `Value` are aimed at exactly this, and the M0 finding that sonic-rs's
+  1.5-3.6x DOM lead comes from its arena `Value` now has a second, independent
+  confirmation from a completely different instrument.
+- **The stringify path already allocates zero times per op.** B5's sink
+  specialisation cannot win by removing allocations, because there are none to
+  remove; it must win on write-call count instead. That reprices the brick
+  before it was built -- which is what a ceiling probe is for.
+- **Every future timing table must name its allocator**, and the harness now
+  prints it in the method line automatically.
+
+**Method line (all M1-A tables).** PROCESS-level paired A/B between two
+binaries; each binary reports its own per-cell time via `rjson-bench solo`, so
+process launch is outside the number; leading binary alternated per pair (ABBA);
+pairs as stated; statistic = min per-iteration time within each arm-sample
+window; verdict = median of paired ratios + paired wins with z; pinned
+cpu2/High with affinity read back per run; work parity = allocation census
+identical between arms + output/input bytes asserted equal per cell per pair;
+binaries differ only in the seam feature, no competitor arms; machine and
+toolchain as in the M0 environment block; commit `4c8e0b3`+. Raw per-pair logs:
+`corpus/runs/m1-alloc-*.txt`.
+
+Reverts this session: none. Nothing was reverted because nothing was changed --
+that is the point of the experiment.
+
+#### M1 instruments landed alongside it
+
+- **Allocation census** (`rjson-bench census`, `--features profile`): the table
+  above. Deterministic, one run, immune to load; the counting wrapper taxes
+  every allocation, so its method line self-flags as unquotable and CI asserts
+  that flag appears.
+- **`solo` + `tools/pinvs.ps1`**: process-level paired A/B, for anything that
+  cannot be an in-process arm.
+- **Differential soak** (`tests/soak.rs`): seeded generator, corpus mutator and
+  number-token generator, all through the oracle. **900,000 cases, 0
+  divergences, 2.81 s** at `RJT_SOAK=300000`; CI runs 300,000 per push.
+- **Seven fuzz targets**, including `oracle_diff` (ours vs upstream on
+  arbitrary bytes). **Wall, recorded so it is not re-diagnosed:** on
+  windows-msvc `cargo fuzz run` dies `STATUS_DLL_NOT_FOUND` without the ASan
+  runtime on PATH, and then `STATUS_ENTRYPOINT_NOT_FOUND` with the LLVM 22 one
+  (`C:\Program Files\LLVM\lib\clang\22\lib\windows`) because it skews against
+  what nightly's sanitizer expects; `--sanitizer=none` does not rescue it
+  either, since libFuzzer's coverage needs the same runtime (`unresolved
+  external symbol __start___sancov_pcs`). The CI `fuzz` job runs `cargo fuzz
+  check` on Linux, and the soak covers the same ground everywhere. Fixing the
+  Windows runtime is an open M1 item, not a blocker.

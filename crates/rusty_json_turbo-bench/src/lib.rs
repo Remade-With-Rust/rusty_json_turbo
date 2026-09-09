@@ -47,6 +47,7 @@ pub mod empty;
 pub mod prim_str;
 pub mod twitter;
 
+pub mod alloc_arm;
 pub mod cells;
 pub mod corpus;
 pub mod harness;

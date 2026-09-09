@@ -1,35 +1,57 @@
 //! `rjson-bench` -- the harness binary.
 //!
 //! ```text
-//! rjson-bench bench [--cell FILE,COLUMN | --all] [--arms A,B] [--pairs N]
-//!                   [--window-ms W] [--pinned DESC] [--commit SHA]
-//! rjson-bench null  [--cell ...] [--pairs N] ...      (upstream vs upstream: the floor)
-//! rjson-bench diff-oracle PATH...                     (files or directories)
+//! rjson-bench bench  [--cell FILE,COLUMN | --all] [--arms A,B] [--pairs N]
+//!                    [--window-ms W] [--pinned DESC] [--commit SHA]
+//! rjson-bench null   [--cell ...] [--pairs N] ...     (an arm vs itself: the floor)
+//! rjson-bench solo   [--cell ...] [--arm A] [--window-ms W]
+//!                                                    (ONE arm, machine-readable RESULT lines)
+//! rjson-bench census [--cell ... | --all]            (allocations per op; needs --features profile)
+//! rjson-bench diff-oracle PATH...                    (files or directories)
 //! rjson-bench list
 //! ```
 //!
-//! Run it through `tools/pinbench.ps1` so the process is pinned to one P-core
-//! at High priority; the wrapper passes `--pinned` and the bench echoes it into
-//! the method line. Every table this prints carries that line.
+//! `bench` and `null` compare two arms INSIDE one process. The allocator cannot
+//! be compared that way -- a program has exactly one -- so `solo` exists to be
+//! driven by `tools/pinvs.ps1`, which alternates two BINARIES and pairs their
+//! self-reported per-cell times.
+//!
+//! Run everything through the pinning wrappers; the method line echoes the pin,
+//! the allocator, and whether this build is taxed by the allocation census.
 
 use std::path::Path;
 use std::process::ExitCode;
 use std::time::Duration;
 
-use rjt_bench::cells::{Arm, Column};
+use rjt_bench::alloc_arm;
+use rjt_bench::cells::{self, Arm, Column};
 use rjt_bench::corpus::{self, File};
 use rjt_bench::harness::{self, Config};
 use rjt_bench::oracle;
 
+// House law: the deliverable declares the allocator, never a library. Both
+// arms of the allocator experiment are explicit about it -- the system build
+// names `System` rather than leaving it implicit, so the two binaries differ
+// only in which backend the seam supplies.
+#[cfg(feature = "profile")]
+#[global_allocator]
+static ALLOC: alloc_arm::Counting<alloc_arm::Backend> = alloc_arm::Counting(alloc_arm::BACKEND);
+
+#[cfg(not(feature = "profile"))]
+#[global_allocator]
+static ALLOC: alloc_arm::Backend = alloc_arm::BACKEND;
+
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let Some(verb) = args.first().map(String::as_str) else {
-        eprintln!("usage: rjson-bench <bench|null|diff-oracle|list> ...");
+        eprintln!("usage: rjson-bench <bench|null|solo|census|diff-oracle|list> ...");
         return ExitCode::from(2);
     };
     match verb {
         "bench" => bench(&args[1..], None),
         "null" => bench(&args[1..], Some((Arm::Upstream, Arm::Upstream))),
+        "solo" => solo(&args[1..]),
+        "census" => census(&args[1..]),
         "diff-oracle" => diff_oracle(&args[1..]),
         "list" => {
             for f in File::ALL {
@@ -48,6 +70,7 @@ fn main() -> ExitCode {
                     }
                 );
             }
+            println!("allocator {}", alloc_arm::name());
             ExitCode::SUCCESS
         }
         other => {
@@ -116,9 +139,15 @@ fn parse_opts(args: &[String], forced_arms: Option<(Arm, Arm)>) -> Result<Opts, 
                     arms = (x, y);
                 }
             }
+            // solo takes a single arm; keep one spelling for both.
+            "--arm" => {
+                let v = next()?;
+                let x = Arm::parse(v).ok_or_else(|| format!("unknown arm {v:?}"))?;
+                arms = (x, x);
+            }
             "--pairs" => pairs = next()?.parse().map_err(|e| format!("--pairs: {e}"))?,
             "--window-ms" => {
-                window_ms = next()?.parse().map_err(|e| format!("--window-ms: {e}"))?
+                window_ms = next()?.parse().map_err(|e| format!("--window-ms: {e}"))?;
             }
             "--pinned" => {
                 pinned = next()?.to_owned();
@@ -150,6 +179,13 @@ fn parse_opts(args: &[String], forced_arms: Option<(Arm, Arm)>) -> Result<Opts, 
     })
 }
 
+fn settle(ms: u64) {
+    if ms > 0 {
+        // Let the wrapper's affinity and priority take effect before any number.
+        std::thread::sleep(Duration::from_millis(ms));
+    }
+}
+
 fn bench(args: &[String], forced_arms: Option<(Arm, Arm)>) -> ExitCode {
     let opts = match parse_opts(args, forced_arms) {
         Ok(o) => o,
@@ -163,20 +199,17 @@ fn bench(args: &[String], forced_arms: Option<(Arm, Arm)>) -> ExitCode {
         eprintln!("error: arm needs --features competitors");
         return ExitCode::from(2);
     }
-    if opts.settle_ms > 0 {
-        // Give the wrapper time to apply affinity and priority before any
-        // number is taken.
-        std::thread::sleep(Duration::from_millis(opts.settle_ms));
-    }
+    settle(opts.settle_ms);
     let null = a == b;
     println!(
-        "rjson-bench: {} vs {}{} | {} cells | {} pairs | {} ms windows",
+        "rjson-bench: {} vs {}{} | {} cells | {} pairs | {} ms windows | allocator {}",
         a.name(),
         b.name(),
         if null { " (NULL ARM: the floor)" } else { "" },
         opts.cells.len(),
         opts.cfg.pairs,
-        opts.cfg.window.as_millis()
+        opts.cfg.window.as_millis(),
+        alloc_arm::name()
     );
     let mut rows = Vec::new();
     let mut header = None;
@@ -231,6 +264,86 @@ fn bench(args: &[String], forced_arms: Option<(Arm, Arm)>) -> ExitCode {
         println!("{r}");
     }
     println!("\n{}", harness::method_line(&opts.cfg, &opts.commit));
+    ExitCode::SUCCESS
+}
+
+/// One arm, machine-readable. The unit `tools/pinvs.ps1` pairs across binaries.
+fn solo(args: &[String]) -> ExitCode {
+    let opts = match parse_opts(args, None) {
+        Ok(o) => o,
+        Err(e) => {
+            eprintln!("error: {e}");
+            return ExitCode::from(2);
+        }
+    };
+    let arm = opts.arms.0;
+    if !arm.available() {
+        eprintln!("error: arm {} needs --features competitors", arm.name());
+        return ExitCode::from(2);
+    }
+    settle(opts.settle_ms);
+    // The runner reads this to record exactly which binary produced the numbers.
+    println!(
+        "BINARY|{}|{}|{}|{}|{}",
+        alloc_arm::name(),
+        alloc_arm::counting(),
+        opts.commit,
+        std::env::consts::OS,
+        std::env::consts::ARCH
+    );
+    for (file, column) in &opts.cells {
+        let input = file.load();
+        let s = cells::run(arm, *file, *column, &input, opts.cfg.window);
+        println!(
+            "RESULT|{}|{}|{}|{}|{}|{}|{}",
+            file.name(),
+            column.name(),
+            arm.name(),
+            s.min_ns(),
+            s.median_ns(),
+            s.iters(),
+            s.bytes
+        );
+    }
+    ExitCode::SUCCESS
+}
+
+/// Allocations per op. Deterministic; needs the counting build.
+fn census(args: &[String]) -> ExitCode {
+    let opts = match parse_opts(args, None) {
+        Ok(o) => o,
+        Err(e) => {
+            eprintln!("error: {e}");
+            return ExitCode::from(2);
+        }
+    };
+    if !alloc_arm::counting() {
+        eprintln!(
+            "error: this build has no counting allocator -- rebuild with --features profile \
+             (and never quote a timing from that build)"
+        );
+        return ExitCode::from(2);
+    }
+    println!("allocator={} (counting)", alloc_arm::name());
+    println!(
+        "{:<14} {:<18} {:>10} {:>14} {:>10} {:>10} {:>12}",
+        "file", "column", "allocs", "alloc_bytes", "reallocs", "frees", "bytes"
+    );
+    for (file, column) in &opts.cells {
+        let input = file.load();
+        let (bytes, c) = cells::census_once(*file, *column, &input);
+        let c = c.unwrap_or_default();
+        println!(
+            "{:<14} {:<18} {:>10} {:>14} {:>10} {:>10} {:>12}",
+            file.name(),
+            column.name(),
+            c.allocs,
+            c.alloc_bytes,
+            c.reallocs,
+            c.frees,
+            bytes
+        );
+    }
     ExitCode::SUCCESS
 }
 

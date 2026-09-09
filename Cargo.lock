@@ -469,6 +469,7 @@ name = "rusty_json_turbo-bench"
 version = "0.1.0"
 dependencies = [
  "rusty_json_turbo",
+ "rusty_json_turbo-alloc",
  "serde",
  "serde_json",
  "simd-json",

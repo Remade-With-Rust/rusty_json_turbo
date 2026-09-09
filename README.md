@@ -53,7 +53,11 @@ ledger says so to within its floor. What exists today:
 
 ### Performance -- measured rather than asserted
 
-No number enters this README without a method line, and no *claim* has yet.
+No number enters this README without a method line. The fork's own JSON code is
+still upstream's, so **there is no claim yet that this crate is faster than
+serde_json** -- that is what the brick campaign is for, and each brick's ledger
+row lands before its sentence here.
+
 The M0 baseline is in [`corpus/LEDGER.md`](corpus/LEDGER.md) with its pin,
 pairs, window, null-arm floor and machine: upstream against itself (the floor,
 medians within 2.3%), ours against upstream (identical source; one cell shows a
@@ -61,7 +65,39 @@ medians within 2.3%), ours against upstream (identical source; one cell shows a
 simd-json 0.18 and sonic-rs 0.5 on all twelve json-benchmark cells. Two honest
 readings from that table: upstream serde_json already beats simd-json on eleven
 of twelve cells under this method, and sonic-rs's 1.5-3.6x DOM-parse lead is
-its arena `Value`, not its scanner. When a brick lands, its row lands first.
+its arena `Value`, not its scanner.
+
+#### The house allocator, and nothing else changed
+
+Linking [`rusty_alloc`](https://github.com/Remade-With-Rust/rusty_alloc)
+through the deliverable's seam -- **not one line of JSON code touched** --
+moves the allocation-heavy columns a long way. Conservative probe (2 s
+samples), Windows x86-64, `> 1` means the house allocator is faster:
+
+| workload | allocations per parse | system | rusty_alloc | ratio |
+|---|---:|---:|---:|---:|
+| twitter, DOM parse | 20,834 | 459 MB/s | **690 MB/s** | **1.53x** |
+| citm_catalog, DOM parse | 39,339 | 697 MB/s | **1013 MB/s** | **1.46x** |
+| canada, struct parse | 485 | 723 MB/s | 768 MB/s | 1.07x |
+| twitter, struct stringify | **0** | 1545 MB/s | 1476 MB/s | 0.98x |
+
+<sub>**The last row is the control, and it is why the others are believable.**
+The stringify columns write into a pre-sized buffer and allocate *zero* times,
+so the allocator cannot touch them -- and it doesn't. The effect sorts with the
+allocation count, which a deterministic census proves is identical under both
+allocators. At 250 ms samples twitter DOM parse reads 2.0x rather than 1.53x,
+so about a quarter of the short-window figure is per-process warm-up; the
+longer, smaller number is the one quoted. The full oracle passes under
+`rusty_alloc` and under its hardened `secure` profile: **no output byte
+changes**, and `secure` keeps nearly the whole win (1.95x on that cell).</sub>
+
+<sub>**Two things this is not.** It is **not** a win of this crate over
+serde_json: at this milestone the code is upstream's, so upstream linked
+against `rusty_alloc` gets the same thing, and none of it counts toward the
+speed gate, which compares like-for-like allocators. And it is a **Windows**
+measurement, where Rust's `System` allocator is `HeapAlloc`; glibc's malloc
+has tcache and fastbins and should close much of the gap, so the Linux number
+is an open question rather than an extrapolation.</sub>
 
 ## What is this?
 
@@ -190,6 +226,7 @@ target/release/rjson-bench diff-oracle path/to/*.json   # the gate, on your own 
 
 - [x] **M0** -- scaffold, oracle, harness, corpus, CI, admissible baseline in the ledger (2026-09-09)
 - [ ] **M1** -- instruments, S4 house payloads, fuzz targets, ceiling probes, ranked worklist
+  <br><sub>done: allocation census, `solo`/`census` verbs, the cross-binary paired runner, seven fuzz targets, and the house-allocator experiment above</sub>
 - [ ] **M2** -- safe byte-identical bricks; core takes `forbid(unsafe_code)`
 - [ ] **M3** -- the `-accel` island: SSE2/AVX2 whitespace, string, escape and ASCII kernels
 - [ ] **M4** -- the serde fork earns its keep: shared identifier matcher, field-index handshake

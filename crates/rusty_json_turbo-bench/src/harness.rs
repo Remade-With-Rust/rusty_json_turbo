@@ -220,16 +220,22 @@ pub fn method_line(cfg: &Config, commit: &str) -> String {
         "method: in-process paired A/B, one binary, both arms linked; lead alternated per pair (ABBA); \
          pairs={}; window={} ms per arm-sample, statistic=min per-iteration time in the window, \
          verdict=median of paired ratios + paired wins with z; clock=std::time::Instant (QPC on Windows); \
-         pinned={}; allocator=system (both arms; as-shipped rows are a separate table); \
-         isa=scalar (no kernels wired at M0); work parity: identical input bytes, output length asserted equal \
+         pinned={}; allocator={} (BOTH arms -- it is a property of the binary); \
+         isa=scalar (no kernels wired); work parity: identical input bytes, output length asserted equal \
          per pair for serde_json-shaped arms; stringify buffers pre-sized and cleared (growth excluded); \
          competitors: simd-json input copy excluded from the timed region; \
-         machine={} {} ; commit={}",
+         machine={} {} ; commit={}{}",
         cfg.pairs,
         cfg.window.as_millis(),
         cfg.pinned,
+        crate::alloc_arm::name(),
         std::env::consts::OS,
         std::env::consts::ARCH,
-        commit
+        commit,
+        if crate::alloc_arm::counting() {
+            " ; !! COUNTING BUILD: every allocation is taxed, these timings are NOT quotable"
+        } else {
+            ""
+        }
     )
 }

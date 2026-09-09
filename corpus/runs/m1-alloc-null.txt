@@ -1,0 +1,23 @@
+﻿pinvs: sysA=target/b-sys/release/rjson-bench.exe (489D8D816B069C9B)
+pinvs: sysB=target/b-sys/release/rjson-bench.exe (489D8D816B069C9B)
+pinvs: NULL ARM -- identical binaries, this is the floor
+pinvs: cpu=2 priority=High pairs=20 bench='solo --all --arm ours'
+
+| file | column | sysA | sysB | sysA/sysB time (median [min, max]) | wins, z |
+|---|---|---:|---:|---:|---:|
+| canada | dom-parse | sysA **379 MB/s** | sysB 373 MB/s | **0.983x** [0.945, 1.038] | 12/20, z = +0.89 |
+| canada | dom-stringify | sysA **931 MB/s** | sysB 921 MB/s | **0.990x** [0.935, 1.050] | 13/20, z = +1.34 |
+| canada | struct-parse | sysA **713 MB/s** | sysB 708 MB/s | **1.003x** [0.933, 1.062] | 9/20, z = -0.45 |
+| canada | struct-stringify | sysA **667 MB/s** | sysB 673 MB/s | **1.011x** [0.959, 1.056] | 9/20, z = -0.45 |
+| citm_catalog | dom-parse | sysA **681 MB/s** | sysB 686 MB/s | **1.015x** [0.939, 1.072] | 8/20, z = -0.89 |
+| citm_catalog | dom-stringify | sysA **1,185 MB/s** | sysB 1,171 MB/s | **0.998x** [0.933, 1.053] | 11/20, z = +0.45 |
+| citm_catalog | struct-parse | sysA **1,340 MB/s** | sysB 1,334 MB/s | **0.998x** [0.967, 1.083] | 11/20, z = +0.45 |
+| citm_catalog | struct-stringify | sysA **1,788 MB/s** | sysB 1,782 MB/s | **0.996x** [0.950, 1.048] | 13/20, z = +1.34 |
+| twitter | dom-parse | sysA **365 MB/s** | sysB 369 MB/s | **1.005x** [0.902, 1.088] | 10/20, z = +0.00 |
+| twitter | dom-stringify | sysA **1,457 MB/s** | sysB 1,410 MB/s | **0.978x** [0.946, 1.045] | 16/20, z = +2.68 |
+| twitter | struct-parse | sysA **890 MB/s** | sysB 877 MB/s | **1.001x** [0.938, 1.049] | 10/20, z = +0.00 |
+| twitter | struct-stringify | sysA **1,488 MB/s** | sysB 1,485 MB/s | **1.005x** [0.915, 1.045] | 8/20, z = -0.89 |
+
+method: PROCESS-level paired A/B between two binaries (a global allocator is one per program, so it cannot be an in-process arm); each binary reports its own per-cell time via json-bench solo so process launch is outside the number; leading binary alternated per pair (ABBA); pairs=20; statistic=min per-iteration time in each arm-sample window; verdict=median of paired ratios + paired wins with z; pinned=cpu2/High, affinity read back per run; work parity: output/input bytes asserted equal per cell per pair; machine=Intel64 Family 6 Model 183 Stepping 1, GenuineIntel
+A: BINARY|system|false|uncommitted|windows|x86_64
+B: BINARY|system|false|uncommitted|windows|x86_64

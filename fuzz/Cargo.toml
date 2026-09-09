@@ -9,10 +9,50 @@ cargo-fuzz = true
 
 [dependencies]
 libfuzzer-sys = "0.4"
-serde_json = { package = "rusty_json_turbo", path = ".." }
+serde_json = { package = "rusty_json_turbo", path = "..", features = ["raw_value"] }
+# The oracle, for the differential target: the same pin the harness uses. A
+# crasher there is a divergence from upstream, which is the one bug class this
+# fork can introduce that no single-implementation fuzzer can see.
+serde_json_upstream = { package = "serde_json", version = "=1.0.151", features = ["raw_value"] }
 
 [[bin]]
 name = "from_slice"
 path = "fuzz_targets/from_slice.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "from_str"
+path = "fuzz_targets/from_str.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "from_reader"
+path = "fuzz_targets/from_reader.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "roundtrip"
+path = "fuzz_targets/roundtrip.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "raw_value"
+path = "fuzz_targets/raw_value.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "stream"
+path = "fuzz_targets/stream.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "oracle_diff"
+path = "fuzz_targets/oracle_diff.rs"
 test = false
 doc = false

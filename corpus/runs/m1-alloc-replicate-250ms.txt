@@ -1,0 +1,14 @@
+﻿pinvs: system=target/b-sys/release/rjson-bench.exe (489D8D816B069C9B)
+pinvs: rusty_alloc=target/b-rusty/release/rjson-bench.exe (8D085FD13E8F64EF)
+pinvs: cpu=2 priority=High pairs=10 bench='solo --cell twitter,dom-parse --cell citm_catalog,dom-parse --cell twitter,struct-stringify --cell canada,struct-parse --arm ours'
+
+| file | column | system | rusty_alloc | system/rusty_alloc time (median [min, max]) | wins, z |
+|---|---|---:|---:|---:|---:|
+| canada | struct-parse | system **690 MB/s** | rusty_alloc 738 MB/s | **1.097x** [1.025, 1.146] | 0/10, z = -3.16 |
+| citm_catalog | dom-parse | system **459 MB/s** | rusty_alloc 985 MB/s | **2.115x** [2.034, 2.373] | 0/10, z = -3.16 |
+| twitter | dom-parse | system **368 MB/s** | rusty_alloc 739 MB/s | **1.979x** [1.821, 2.193] | 0/10, z = -3.16 |
+| twitter | struct-stringify | system **1,476 MB/s** | rusty_alloc 1,458 MB/s | **0.988x** [0.933, 1.063] | 6/10, z = +0.63 |
+
+method: PROCESS-level paired A/B between two binaries (a global allocator is one per program, so it cannot be an in-process arm); each binary reports its own per-cell time via json-bench solo so process launch is outside the number; leading binary alternated per pair (ABBA); pairs=10; statistic=min per-iteration time in each arm-sample window; verdict=median of paired ratios + paired wins with z; pinned=cpu2/High, affinity read back per run; work parity: output/input bytes asserted equal per cell per pair; machine=Intel64 Family 6 Model 183 Stepping 1, GenuineIntel
+A: BINARY|system|false|uncommitted|windows|x86_64
+B: BINARY|rusty_alloc 2.0.4|false|uncommitted|windows|x86_64
