@@ -238,7 +238,32 @@ jobs:
       - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@nightly
       - uses: Swatinem/rust-cache@v2
-      - uses: dtolnay/install@cargo-fuzz
+      # `dtolnay/install@cargo-fuzz` fetches a prebuilt binary and GitHub
+      # verifies its artifact attestation. That verification is a THIRD-PARTY
+      # SERVICE, and when it is down the job fails with
+      # `HTTP 503: trust-metadata-api service unavailable` having never
+      # compiled a line -- which is a red gate that says nothing about the
+      # code. Take the fast path when it works, and fall back to building from
+      # crates.io when it does not, so the gate stays meaningful either way.
+      - name: cargo-fuzz (prebuilt, with a source fallback)
+        run: |
+          if cargo fuzz --version >/dev/null 2>&1; then
+            echo "cargo-fuzz already present: $(cargo fuzz --version)"
+            exit 0
+          fi
+          url=https://github.com/dtolnay/install/releases/download/cargo-fuzz/cargo-fuzz
+          if curl --location --silent --show-error --fail --retry 3                --output "$HOME/.cargo/bin/cargo-fuzz" "$url"; then
+            chmod +x "$HOME/.cargo/bin/cargo-fuzz"
+            if cargo fuzz --version >/dev/null 2>&1; then
+              echo "cargo-fuzz installed from the prebuilt binary"
+              exit 0
+            fi
+            echo "the prebuilt binary did not run; falling back to a source build"
+          else
+            echo "the prebuilt download failed; falling back to a source build"
+          fi
+          cargo install cargo-fuzz --locked
+          cargo fuzz --version
       - run: cargo fuzz check
 
   # Catches a broken manifest or a file the package would ship without --
