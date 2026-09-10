@@ -2472,3 +2472,280 @@ UTF-8, and allocates a `String` per document -- 10,000 allocations. That
 residual is architectural, not a missing brick: a borrowed `RawValue` over a
 reader would have to hand out a slice of a buffer the parser is still moving.
 Recorded so it is not re-litigated.
+
+### 2026-09-10 -- M5: B9 refuted by counting, and B15's price was wrong
+
+M5's last item was a **batch**. B9 and B15's surviving half were each below this
+project's measurement floor on their own, so the plan was to build them behind
+one switch and measure the pair together, where the sum might clear 1%.
+
+Both were priced before either was built. They came apart completely: one is
+refuted by arithmetic, and the other turns out to have been **mispriced in this
+ledger by a factor of three** and is worth building on its own.
+
+#### B9 -- `parse_ident` as one compare -- REFUTED BY COUNTING
+
+B9 replaces `parse_ident`'s per-byte `next_char` loop with a single 3- or
+4-byte compare, so what it removes is two or three byte-visits per literal.
+That makes its ceiling a property of the corpus, not of the code, and the
+corpus can simply be counted:
+
+| file | `true`/`false` | `null` | idents | ident bytes | share of file |
+|---|---:|---:|---:|---:|---:|
+| twitter | 2,791 | 1,946 | 4,737 | 14,211 | 2.25% |
+| citm_catalog | 0 | 1,263 | 1,263 | 3,789 | 0.22% |
+| **canada** | **0** | **0** | **0** | **0** | **0.00%** |
+| s5-log-stream | 1,073 | 9,124 | 10,197 | 30,591 | 1.17% |
+| s4-frame-telemetry | 0 | 1 | 1 | 3 | 0.00% |
+| s4-media-probe | 0 | 105 | 105 | 315 | 0.06% |
+| s4-node-config | 57 | 15 | 72 | 216 | 3.23% |
+| s4-ocr-i18n | 719 | 145 | 864 | 2,592 | 0.62% |
+| s4-signin-batch | 0 | 0 | 0 | 0 | 0.00% |
+| s4-sync-envelope | 574 | 493 | 1,067 | 3,201 | 1.50% |
+| s4-vault-shard | 4 | 0 | 4 | 12 | 0.00% |
+
+**`canada.json` contains no literals at all**, and canada is the one file where
+per-byte parser cost dominates everything else -- 2.25 MB of numbers, 2.2
+million peeks. B9 cannot move it by construction. `citm_catalog`, the other
+large cell, is at 0.22%; `s4-frame-telemetry`, the widest struct in the corpus,
+contains exactly **one** literal. The densest file in the whole corpus is
+`s4-node-config` at 3.23%, and it is 6,677 bytes -- too small to time.
+
+So the ceiling is: at most 2.25% of the **cheapest operation the parser has**,
+on one mid-sized cell, and 0.00% to 0.22% on the two largest. A `next_char` on
+an already-buffered byte is an index, a compare and a perfectly predicted
+branch. The replacement is a 3-byte compare with its own bounds check and its
+own branch.
+
+That is precisely B4x's shape, and B4x is the measurement that settles this:
+**a four-digit fold hit 99.91% of its call sites, removed 443,936 peeks -- a
+third of canada's total -- and ran 2.5% SLOWER** (61 pairs, z = +5.25,
+best-of-N agreeing, two controls flat). Removed work is not saved time. Here
+there is barely any work to remove, on the cells that matter not any at all.
+
+**Refuted by counting, not built.** The count is one script over the corpus and
+took a minute; the brick would have taken an afternoon and needed a `Read`
+trait method on both input shapes.
+
+#### B15's separator half -- THE LEDGER'S OWN PRICE WAS WRONG
+
+The same ledger recorded on 2026-09-10 that folding the **constant** separators
+-- `,` with a key's opening quote, and that key's closing quote with the colon
+-- "prices at well under 1%". That estimate was never measured. It has now
+been, by `crates/rusty_json_turbo-bench/tests/b15b_price.rs`, and it is wrong
+by roughly a factor of three:
+
+| cell | keys | five calls | three calls | saved | per key | whole stringify | **ceiling** |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| citm_catalog | 25,869 | 94,500 ns | 80,700 ns | 13,800 ns | 0.53 ns | 473,300 ns | **2.92%** |
+| twitter | 13,345 | 50,300 ns | 41,600 ns | 8,700 ns | 0.65 ns | 289,000 ns | **3.01%** |
+
+The probe is deliberately **biased in the brick's favour** -- a tight loop with
+nothing competing for the store ports, a sink with its capacity already
+reserved, no escape check, and real key distributions taken from the corpus
+rather than synthetic ones -- with work parity asserted before timing (both
+arms must write identical bytes). So 2.9% and 3.0% are an **upper bound**, and
+the upper bound is above the floor rather than under it.
+
+**A price recorded without a measurement is a guess, and this one was off by
+3x in the direction that would have lost the brick.** The probe stays in the
+tree so the number is re-derivable in one command.
+
+### 2026-09-10 -- B15s: BUILT, MEASURED, REVERTED -- and the ceiling probe is the finding
+
+The surviving half of B15 folds the **constant** separators around a struct
+field's key: `,` with the opening quote, and the closing quote with the colon.
+Both stay compile-time lengths, so it does not commit B15's actual sin of
+turning a constant-length store into a runtime-length `memcpy`. Five sink calls
+per field become three.
+
+It was priced at a **2.92% and 3.01% ceiling**, built, gated byte-identical on
+4.5 MB of struct output, measured on a quiet box over 41 pairs -- and it is
+**flat, negative on the densest cell, and reverted.**
+
+#### The measurement, and why this one is admissible
+
+| cell | median | best-of-N | wins, z |
+|---|---:|---:|---:|
+| **s4-frame-telemetry struct-stringify** | **0.996x** | **0.990x** | 25/41, z = **+1.41** |
+| citm_catalog struct-stringify | 1.009x | 1.002x | 16/41, z = -1.41 |
+| canada struct-stringify (control, same column) | 1.001x | 1.003x | 19/41, z = -0.47 |
+| twitter dom-stringify (control, off the path) | 1.001x | 1.013x | 20/41, z = -0.16 |
+
+Ratios are fold-off/fold-on, so above 1.000 means the fold is faster.
+`s4-frame-telemetry` is the cell the fold should own: 46,816 object keys, of
+which 46,800 are struct fields (2,600 records x 18). **Both statistics say the
+fold is SLOWER there, by about the same amount, and the largest |z| in the run
+points at the off-arm.** `citm_catalog` reads 1.009x median, inside a null arm
+that read 0.996x on the same cell. The two controls are flat.
+
+**The null arm this session is the tightest this project has recorded**, and it
+did more than set a floor. Same binary, same knob on both sides, 21 pairs:
+medians 0.990x-1.002x, best-of-N 0.998x-1.015x -- so the floor is about 1% on
+the median and 2% on best-of-N.
+
+And it invalidated an earlier run outright. A first 21-pair A/B, taken while
+the box was still busy, read the same binary at **633-723 MB/s on
+`s4-frame-telemetry` where the null read 842-888** -- 25 to 30% slower, with
+paired-ratio ranges of [0.68, 1.23] against the null's [0.92, 1.12], and with
+BOTH controls disagreeing in sign between median and best-of-N. That run
+suggested 1.021x and 1.072x. It was noise. **A control that disagrees with
+itself is the box telling you to stop.**
+
+#### Three probes, one verdict
+
+1. Median of 41 paired ratios: 0.996x on the target cell.
+2. Best-of-N, which noise can only inflate: 0.990x, same sign.
+3. The null arm: floor 1%/2%, controls flat inside it.
+
+All three agree, so the cell is resolved rather than unresolved. Reverted, and
+the revert is of the kind this project has learned to name: **built correctly,
+gated correctly, and it does not pay.** Not "it broke", not "it was
+unmeasurable".
+
+#### THE FINDING: a tight-loop ceiling probe bounds the WORK, not the TIME
+
+This is the third time on this project that removing real, counted work has
+delivered nothing -- B4x (removed a third of canada's peeks, 2.5% slower), B15
+(removed 36.6% of twitter's sink calls, 11-15% slower), and now B15s (removed
+one capacity check per struct field, 0.4% slower on the cell with 46,800 of
+them). The law was already written. What is new is **the instrument's own
+failure mode**, and it is one this ledger walked into this morning.
+
+`b15b_price.rs` measured the two write shapes in a tight loop -- nothing
+competing for the store ports, a pre-reserved sink, perfect prediction -- and
+called the result an "upper bound, biased in the brick's favour". That framing
+was right about the direction and wrong about the *kind* of bound:
+
+> **An isolated micro-probe bounds the WORK the brick removes, not the TIME the
+> program will save. The surrounding program may already be hiding that work.**
+>
+> **So a tight-loop ceiling probe can REFUTE a brick -- if its ceiling is under
+> the measurement floor, no build is needed. It can never JUSTIFY one.**
+
+That is exactly how the probe was used this morning, and it is the reasoning
+error to record. The ledger's earlier estimate of "well under 1%" for this
+brick was an unmeasured guess; the probe corrected it to 2.9%; and the program
+delivered 0.0%. **Both numbers were wrong, and the probe was wrong in the
+direction that cost an afternoon.** The count that matters is the one taken
+against the whole program, which is what a knob A/B is for.
+
+#### The mechanism is not settled, and where to look is itself a finding
+
+Two explanations fit a 2.9% ceiling delivering 0.0%, and this run does not
+separate them:
+
+1. **The compiler already did it.** Two adjacent `write_all` calls with
+   compile-time lengths of one may be merged by LLVM into a single two-byte
+   store, in which case B15s hand-writes what was already emitted and the knob
+   toggles between identical machine code.
+2. **The work was never on the critical path.** One capacity check per struct
+   field is hidden under the value formatting, the field walk and the escape
+   scan happening around it, so removing it frees nothing.
+
+The asm census cannot answer it from the library, and **that is worth
+recording**: `SerializeStruct::serialize_field` is generic over the value type,
+so the folded code is monomorphised in the CALLING crate, not in
+`rusty_json_turbo`. `cargo rustc --lib -- --emit asm` on this crate contains no
+instance of it at all -- 30,310 lines with not one two-byte immediate store of
+a separator pair. Any future asm census of a generic serializer path has to be
+taken on the consumer, not on the library.
+
+The verdict does not depend on which explanation is right. Both say the same
+thing about what to do next, and the law above covers both.
+
+#### What was kept
+
+- **`tests/b15s_key_fold.rs` stays**, because writing it found a real gap: the
+  differential oracle compares `to_string_pretty` (which is `PrettyFormatter`)
+  and `Value::to_string` (which goes through `serialize_map`), so **no oracle
+  cell covered compact struct-stringify at all** -- the column the harness
+  times on every file. It now does: eleven typed fixtures, 4.5 MB of output,
+  compact and pretty, against upstream; keys renamed to hold a quote, a
+  backslash, a control character, U+2028 and CJK; an empty key; a
+  `skip_serializing_if` that moves which field is FIRST at runtime; structs of
+  zero and one field; and every other route to an object key asserted
+  unchanged. That gate outlives the brick it was written for.
+- **`tests/b15b_price.rs` stays**, with its lesson in the header, so the next
+  person to have this idea gets the number and the warning together.
+- **`Formatter::write_object_key_str` is GONE.** A defaulted method on a public
+  trait is cheap for callers and still divergence from upstream, and this fork
+  is a drop-in replacement. Nothing that does not pay is worth diverging for.
+
+### 2026-09-10 -- M5's architectural note: the four cells that have stopped moving
+
+M5's exit criteria require, in the plan's own words, "a written 'what remains
+is architectural' note for any cell that stalled after two flat bricks". Four
+cells qualify. Writing them down is the point: a stalled cell that is not
+recorded gets re-attacked by the next person with the same two bricks.
+
+#### 1. `twitter` struct-parse -- 0.988x net, and the ceiling says why
+
+Two bricks flat and one ceiling probe. B4's eight-digit number fold does
+nothing here (twitter's numbers are short ids and counts), and the whole key
+family -- B6 key dispatch, B6h the field-index handshake, B6d one shared
+matcher -- was retired by M4's probe, which built a hand-written dispatcher
+that decides on length plus one or two bytes and measured **free key dispatch
+worth 0.6%** of the parse. The bias correction confirmed it from the other
+direction: netted against the identical-source floor, this cell is 0.988x.
+
+**Architectural, and named:** twitter struct-parse is dominated by the *strings
+it builds*, not by finding them. 367,917 bytes of string content in 18,099
+separate `from_utf8` calls (mean 20 B), and every one becomes an owned `String`
+in the struct. The lever is not the parser, it is the destination type -- a
+borrowed `&str` field or an arena. That is B11/B8-class work behind the v1.x
+arena `Value`, not a brick.
+
+#### 2. `canada` dom-stringify -- flat, and the correction has its own error bar
+
+Reported 1.01x, netted 0.946x against M0 and **1.003x against `cf6c2f9`**. The
+bias for this cell is itself build-dependent by about 5%, so the honest
+statement is "unchanged, and this comparison cannot resolve it".
+
+**Architectural, and named:** canada holds **90 string bytes in 2.25 MB**. B3's
+escape brick has nothing to escape and B15s has 8 object keys to fold. The cell
+is `zmij`'s float formatter, 2.2 million times, and that is already Schubfach.
+There is no brick here; there is a different algorithm or nothing.
+
+#### 3. `s4-frame-telemetry` struct-parse -- the bar cannot be measured
+
+G2 asks for >= 1.4x on S4 struct parse against upstream. Measured against the
+commit that registered the cell, the gap was **1.165x on day one**, and it
+reads 1.122x now -- better. With every brick disabled, restoring upstream's own
+loops on our hot paths, the gap gets **worse** (1.303x). So the residual is
+instantiation bias for the largest derive-generated matcher in the corpus, 18
+fields across 2,600 records.
+
+**Architectural, and named:** the bias on this cell exceeds the bar, so
+ours-against-upstream cannot answer the question at all. Either G2's S4 bar is
+restated net of the identical-source floor, or S4's standing is quoted from a
+knob A/B against our own previous code -- which says our bricks are worth
+**1.069x** on the very cell that was reported as a loss. Recorded rather than
+quietly dropped, and it is a measurement-definition problem, not a code
+problem.
+
+#### 4. Per-document cost on log-sized payloads -- fixed, and confirmed twice
+
+The S5 cell measured the same parser at ~470 MB/s on a 631 KB document and
+**183 MB/s on 261-byte documents**, with the pretty variant *faster per
+document* than the minified one despite being 25% larger. M1-D's latency cell
+found the same thing from another direction: a 65x spread in MB/s driven by
+message size alone.
+
+**Architectural, and named:** what a 261-byte document pays is setup, not
+bytes -- a `Deserializer`, a scratch `Vec`, and for `Value` a `Map` allocation
+with nothing to amortise it over. B10's census already priced the two real
+fixes (intern the keys; stop paying for an eleven-key `BTreeMap` node to hold
+two) and both need `Map`'s key type or backing store to change. v1.x.
+
+#### The shape of all four
+
+Three of the four are the same sentence: **the remaining cost is in the type
+the parser is asked to build, not in the parsing.** `String` per field, `Map`
+per document, `BTreeMap` node per object. That is what the v1.x arena `Value`
+is for, and it is why M5 closes with bricks landed on the reader (B7, B13) and
+the serializer's escape scan (B3) rather than on the value model. It is also
+why B15s could not pay: the sink was never the cost.
+
+The fourth is not a code problem at all: it is a bar defined against a
+comparison that carries more bias than the bar allows.

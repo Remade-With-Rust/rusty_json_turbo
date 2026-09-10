@@ -1,0 +1,27 @@
+﻿pinvs: fold-off=.\target\release\rjson-bench.exe (DE52020EE51D1DBC)
+pinvs: fold-on=.\target\release\rjson-bench.exe (DE52020EE51D1DBC)
+pinvs: NULL ARM -- identical binaries, this is the floor
+pinvs: cpu=2 priority=High pairs=21 bench='solo --arm ours --window-ms 200 --cell s4-frame-telemetry,struct-stringify --cell twitter,struct-stringify --cell citm_catalog,struct-stringify --cell canada,struct-stringify --cell twitter,dom-stringify --cell citm_catalog,struct-parse'
+
+| file | column | fold-off | fold-on | fold-off/fold-on time (median [min, max]) | wins, z |
+|---|---|---:|---:|---:|---:|
+| canada | struct-stringify | fold-off **536 MB/s** | fold-on 556 MB/s | **1.010x** [0.792, 1.231] | 9/21, z = -0.65 |
+| citm_catalog | struct-parse | fold-off **1,243 MB/s** | fold-on 1,246 MB/s | **0.992x** [0.582, 1.678] | 12/21, z = +0.65 |
+| citm_catalog | struct-stringify | fold-off **1,465 MB/s** | fold-on 1,487 MB/s | **1.009x** [0.753, 1.133] | 8/21, z = -1.09 |
+| s4-frame-telemetry | struct-stringify | fold-off **633 MB/s** | fold-on 647 MB/s | **1.021x** [0.679, 1.216] | 8/21, z = -1.09 |
+| twitter | dom-stringify | fold-off **1,677 MB/s** | fold-on 1,687 MB/s | **1.003x** [0.725, 1.371] | 10/21, z = -0.22 |
+| twitter | struct-stringify | fold-off **1,818 MB/s** | fold-on 1,837 MB/s | **1.005x** [0.859, 1.244] | 10/21, z = -0.22 |
+
+| file | column | fold-off best-of-N | fold-on best-of-N | fold-off/fold-on best-of-N |
+|---|---|---:|---:|---:|
+| canada | struct-stringify | 654 MB/s | 644 MB/s | **0.984x** |
+| citm_catalog | struct-parse | 1,446 MB/s | 1,429 MB/s | **0.988x** |
+| citm_catalog | struct-stringify | 1,596 MB/s | 1,654 MB/s | **1.036x** |
+| s4-frame-telemetry | struct-stringify | 723 MB/s | 775 MB/s | **1.072x** |
+| twitter | dom-stringify | 1,929 MB/s | 1,875 MB/s | **0.972x** |
+| twitter | struct-stringify | 2,040 MB/s | 2,054 MB/s | **1.007x** |
+pinvs: wrote corpus\runs\2026-09-10-b15s-keyfold.csv
+
+method: PROCESS-level paired A/B between two binaries (a global allocator is one per program, so it cannot be an in-process arm); each binary reports its own per-cell time via json-bench solo so process launch is outside the number; leading binary alternated per pair (ABBA); pairs=21; statistic=min per-iteration time in each arm-sample window; verdict=median of paired ratios + paired wins with z, plus a best-of-N per-arm minimum that noise can only inflate; pinned=cpu2/High, affinity read back per run; work parity: output/input bytes asserted equal per cell per pair; machine=Intel64 Family 6 Model 183 Stepping 1, GenuineIntel
+A: BINARY|system|false|uncommitted|windows|x86_64
+B: BINARY|system|false|uncommitted|windows|x86_64

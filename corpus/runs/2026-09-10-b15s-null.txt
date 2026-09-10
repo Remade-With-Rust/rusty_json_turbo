@@ -1,0 +1,23 @@
+﻿pinvs: null-a=.\target\release\rjson-bench.exe (DE52020EE51D1DBC)
+pinvs: null-b=.\target\release\rjson-bench.exe (DE52020EE51D1DBC)
+pinvs: NULL ARM -- identical binaries, this is the floor
+pinvs: cpu=2 priority=High pairs=21 bench='solo --arm ours --window-ms 250 --cell s4-frame-telemetry,struct-stringify --cell citm_catalog,struct-stringify --cell canada,struct-stringify --cell twitter,dom-stringify'
+
+| file | column | null-a | null-b | null-a/null-b time (median [min, max]) | wins, z |
+|---|---|---:|---:|---:|---:|
+| canada | struct-stringify | null-a **670 MB/s** | null-b 664 MB/s | **0.990x** [0.905, 1.079] | 12/21, z = +0.65 |
+| citm_catalog | struct-stringify | null-a **1,762 MB/s** | null-b 1,737 MB/s | **0.996x** [0.885, 1.057] | 11/21, z = +0.22 |
+| s4-frame-telemetry | struct-stringify | null-a **842 MB/s** | null-b 846 MB/s | **1.002x** [0.920, 1.124] | 8/21, z = -1.09 |
+| twitter | dom-stringify | null-a **2,013 MB/s** | null-b 2,018 MB/s | **0.996x** [0.861, 1.044] | 12/21, z = +0.65 |
+
+| file | column | null-a best-of-N | null-b best-of-N | null-a/null-b best-of-N |
+|---|---|---:|---:|---:|
+| canada | struct-stringify | 694 MB/s | 692 MB/s | **0.998x** |
+| citm_catalog | struct-stringify | 1,838 MB/s | 1,865 MB/s | **1.015x** |
+| s4-frame-telemetry | struct-stringify | 888 MB/s | 888 MB/s | **0.999x** |
+| twitter | dom-stringify | 2,116 MB/s | 2,071 MB/s | **0.979x** |
+pinvs: wrote corpus\runs\2026-09-10-b15s-null.csv
+
+method: PROCESS-level paired A/B between two binaries (a global allocator is one per program, so it cannot be an in-process arm); each binary reports its own per-cell time via json-bench solo so process launch is outside the number; leading binary alternated per pair (ABBA); pairs=21; statistic=min per-iteration time in each arm-sample window; verdict=median of paired ratios + paired wins with z, plus a best-of-N per-arm minimum that noise can only inflate; pinned=cpu2/High, affinity read back per run; work parity: output/input bytes asserted equal per cell per pair; machine=Intel64 Family 6 Model 183 Stepping 1, GenuineIntel
+A: BINARY|system|false|uncommitted|windows|x86_64
+B: BINARY|system|false|uncommitted|windows|x86_64

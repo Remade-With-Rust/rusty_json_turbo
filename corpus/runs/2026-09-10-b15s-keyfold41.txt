@@ -1,0 +1,23 @@
+﻿pinvs: fold-off=.\target\release\rjson-bench.exe (DE52020EE51D1DBC)
+pinvs: fold-on=.\target\release\rjson-bench.exe (DE52020EE51D1DBC)
+pinvs: NULL ARM -- identical binaries, this is the floor
+pinvs: cpu=2 priority=High pairs=41 bench='solo --arm ours --window-ms 250 --cell s4-frame-telemetry,struct-stringify --cell citm_catalog,struct-stringify --cell canada,struct-stringify --cell twitter,dom-stringify'
+
+| file | column | fold-off | fold-on | fold-off/fold-on time (median [min, max]) | wins, z |
+|---|---|---:|---:|---:|---:|
+| canada | struct-stringify | fold-off **690 MB/s** | fold-on 691 MB/s | **1.001x** [0.743, 1.064] | 19/41, z = -0.47 |
+| citm_catalog | struct-stringify | fold-off **1,784 MB/s** | fold-on 1,807 MB/s | **1.009x** [0.925, 1.072] | 16/41, z = -1.41 |
+| s4-frame-telemetry | struct-stringify | fold-off **854 MB/s** | fold-on 849 MB/s | **0.996x** [0.857, 1.106] | 25/41, z = +1.41 |
+| twitter | dom-stringify | fold-off **2,071 MB/s** | fold-on 2,088 MB/s | **1.001x** [0.849, 1.091] | 20/41, z = -0.16 |
+
+| file | column | fold-off best-of-N | fold-on best-of-N | fold-off/fold-on best-of-N |
+|---|---|---:|---:|---:|
+| canada | struct-stringify | 709 MB/s | 711 MB/s | **1.003x** |
+| citm_catalog | struct-stringify | 1,932 MB/s | 1,936 MB/s | **1.002x** |
+| s4-frame-telemetry | struct-stringify | 930 MB/s | 921 MB/s | **0.990x** |
+| twitter | dom-stringify | 2,248 MB/s | 2,278 MB/s | **1.013x** |
+pinvs: wrote corpus\runs\2026-09-10-b15s-keyfold41.csv
+
+method: PROCESS-level paired A/B between two binaries (a global allocator is one per program, so it cannot be an in-process arm); each binary reports its own per-cell time via json-bench solo so process launch is outside the number; leading binary alternated per pair (ABBA); pairs=41; statistic=min per-iteration time in each arm-sample window; verdict=median of paired ratios + paired wins with z, plus a best-of-N per-arm minimum that noise can only inflate; pinned=cpu2/High, affinity read back per run; work parity: output/input bytes asserted equal per cell per pair; machine=Intel64 Family 6 Model 183 Stepping 1, GenuineIntel
+A: BINARY|system|false|uncommitted|windows|x86_64
+B: BINARY|system|false|uncommitted|windows|x86_64

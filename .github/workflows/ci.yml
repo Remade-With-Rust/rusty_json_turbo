@@ -246,6 +246,17 @@ jobs:
       # window for an oversized capture and hands the growth back afterwards,
       # and NEITHER event changes a byte of output, so only the library's own
       # counters can say the growth happened and was returned.
+      # The differential oracle compares `to_string_pretty` (`PrettyFormatter`)
+      # and `Value::to_string` (`serialize_map`), so **no oracle cell covered
+      # compact struct-stringify** -- a column this harness times on every file.
+      # These two close that hole. Written for brick B15s, kept after B15s was
+      # reverted: the gate has nothing to do with the brick, and the probe
+      # carries the lesson that a tight-loop ceiling can refute a brick but
+      # never justify one.
+      - name: Compact struct-stringify is byte-identical to upstream
+        run: |
+          cargo test -p rusty_json_turbo-bench --release --locked --test b15s_key_fold
+          cargo test -p rusty_json_turbo-bench --release --locked --test b15b_price -- --nocapture
       - name: A RawValue over a reader is captured as a range (brick B13)
         run: |
           cargo test -p rusty_json_turbo-bench --release --locked --features raw_value --test b13_raw_range
