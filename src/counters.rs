@@ -58,6 +58,20 @@ pub static ESC_FRAGS: AtomicU64 = AtomicU64::new(0);
 pub static ESC_STEPS: AtomicU64 = AtomicU64::new(0);
 /// Object keys parsed (brick B6). One per key, whatever the visitor does next.
 pub static KEYS: AtomicU64 = AtomicU64::new(0);
+/// `RawValue` captures completed on a reader (brick B13).
+pub static RAW_CAPTURES: AtomicU64 = AtomicU64::new(0);
+/// Bytes of `RawValue` text captured on a reader (brick B13). Upstream pushed
+/// one byte at a time and this is how many; B13 takes the same total in
+/// `RAW_CAPTURES` copies, so the ratio of the two is the brick's whole effect.
+pub static RAW_BYTES: AtomicU64 = AtomicU64::new(0);
+/// Times the window had to GROW because a captured value was longer than it
+/// (brick B13). Zero on any stream of ordinary documents; non-zero is the only
+/// case where B13 costs memory that upstream did not spend.
+pub static RAW_GROWS: AtomicU64 = AtomicU64::new(0);
+/// Times a grown window was handed back at the end of a capture (brick B13).
+/// This is the counter that says the growth is not permanent -- there is no
+/// output difference to gate it with.
+pub static RAW_SHRINKS: AtomicU64 = AtomicU64::new(0);
 /// Bytes handed to `str::from_utf8` for validation (brick B12). `from_str`
 /// pays none of this because its input is already known to be UTF-8, so the
 /// gap between `from_slice` and `from_str` on the same bytes is B12's ceiling.
@@ -101,6 +115,14 @@ pub struct Counters {
     pub esc_steps: u64,
     /// Object keys parsed.
     pub keys: u64,
+    /// `RawValue` captures completed on a reader.
+    pub raw_captures: u64,
+    /// Bytes of `RawValue` text captured on a reader.
+    pub raw_bytes: u64,
+    /// Times the window grew for a capture longer than itself.
+    pub raw_grows: u64,
+    /// Times a grown window was handed back.
+    pub raw_shrinks: u64,
     /// Bytes handed to `str::from_utf8` for validation.
     pub utf8_bytes: u64,
     /// Calls to that validation.
@@ -127,6 +149,10 @@ pub fn snapshot() -> Counters {
         esc_frags: ESC_FRAGS.load(Ordering::Relaxed),
         esc_steps: ESC_STEPS.load(Ordering::Relaxed),
         keys: KEYS.load(Ordering::Relaxed),
+        raw_captures: RAW_CAPTURES.load(Ordering::Relaxed),
+        raw_bytes: RAW_BYTES.load(Ordering::Relaxed),
+        raw_grows: RAW_GROWS.load(Ordering::Relaxed),
+        raw_shrinks: RAW_SHRINKS.load(Ordering::Relaxed),
         utf8_bytes: UTF8_BYTES.load(Ordering::Relaxed),
         utf8_calls: UTF8_CALLS.load(Ordering::Relaxed),
     }
@@ -151,6 +177,10 @@ pub fn reset() {
         &ESC_FRAGS,
         &ESC_STEPS,
         &KEYS,
+        &RAW_CAPTURES,
+        &RAW_BYTES,
+        &RAW_GROWS,
+        &RAW_SHRINKS,
         &UTF8_BYTES,
         &UTF8_CALLS,
     ] {
@@ -179,6 +209,10 @@ impl Counters {
             esc_frags: self.esc_frags - earlier.esc_frags,
             esc_steps: self.esc_steps - earlier.esc_steps,
             keys: self.keys - earlier.keys,
+            raw_captures: self.raw_captures - earlier.raw_captures,
+            raw_bytes: self.raw_bytes - earlier.raw_bytes,
+            raw_grows: self.raw_grows - earlier.raw_grows,
+            raw_shrinks: self.raw_shrinks - earlier.raw_shrinks,
             utf8_bytes: self.utf8_bytes - earlier.utf8_bytes,
             utf8_calls: self.utf8_calls - earlier.utf8_calls,
         }

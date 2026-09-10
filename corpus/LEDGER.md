@@ -2347,3 +2347,128 @@ reject four `match` sites that had silently been exhaustive -- `by_fixture!`,
 would have been a silent skip or a wrong answer if the enum had carried a
 catch-all. Exhaustive matches are why adding a corpus scenario is a compile
 error rather than a quiet omission.
+
+### 2026-09-10 -- M5-B13: a `RawValue` over a reader as a range, 1.81x
+
+The plan said B13 "falls out of B7", and for once a brick that was predicted to
+be easy actually was. It is also the largest single ratio this project has
+measured.
+
+#### Priced before it was built, which is why it was built
+
+`crates/rusty_json_turbo-bench/tests/b13_price.rs`, on `s5-log-stream.ndjson`
+(2,613,127 bytes, 10,000 documents), release, best-of-7, all four arms in one
+process:
+
+| arm | before | after |
+|---|---:|---:|
+| `Value` / reader | 157 MB/s | 165 MB/s |
+| **`RawValue` / reader** | **257 MB/s** | **466 MB/s** |
+| `RawValue` / slice | 1,074 MB/s | 1,048 MB/s |
+| `RawValue` / reader, upstream | 259 MB/s | 246 MB/s |
+
+**1.81x on the target arm, and the control held.** The `RawValue`/slice arm is
+the control this measurement needed: it is in the same process, on the same
+file, in the same window, and B13 provably cannot reach it -- `SliceRead`'s
+capture was already a range of the borrowed input and was not touched. It moved
+0.98x, which is the noise. The target arm moved 1.81x.
+
+**Against upstream in the same process, 1.009x -> 0.528x**, so **1.89x faster
+than upstream serde_json** on `RawValue` over a reader. That is an
+ours-vs-upstream number and therefore carries instantiation bias, but the bias
+measured across every cell in this corpus ranges 0.807x to 1.004x; a 1.89x
+reading is an order of magnitude outside it.
+
+The gap to the slice floor -- the ceiling the pricing test existed to find --
+closes from **4.18x to 2.25x**.
+
+#### What it does
+
+Upstream captured a `RawValue` on `IoRead` by pushing every consumed byte into
+a `Vec`, from `next`, from `discard` and (after B7) from the whitespace
+override. On this stream that is 2.6 million individual pushes. But since B7
+the reader holds a window, and the bytes of a value are already contiguous
+inside it, so the capture does not need accumulating -- it needs *addressing*:
+
+- `begin_raw_buffering` records `raw_from`, the index in the window where the
+  value starts. A byte held in `ch` has been PULLED but not CONSUMED, and
+  upstream pushed it only if it was later consumed, so the start is `pos` less
+  that byte -- the same arithmetic as `byte_offset`.
+- `fill` then drains the window only as far as `raw_from` instead of as far as
+  `pos`, so the captured bytes stay addressable across every refill. What is
+  held is bounded by the size of the value, which is exactly what upstream's
+  raw `Vec` held anyway.
+- `end_raw_buffering` takes `buf[raw_from..pos - (ch.is_some())]` in **one**
+  copy, into a `Vec` whose single allocation `String::from_utf8` then adopts.
+- `next`, `discard` and `skip_whitespace` lose their pushes entirely. In a
+  `raw_value` build they are now the same instructions as in a build without
+  the feature.
+
+A value longer than the window doubles it rather than sliding, and
+`end_raw_buffering` hands the growth straight back -- a slide, a truncate and a
+`shrink_to_fit` -- because upstream allocated a fresh `Vec` per value and freed
+it each time, and B13 must be no worse on memory than what it replaced.
+
+#### Counters, and here they are load-bearing rather than confirmatory
+
+Growing the window and handing it back **changes no output at all**. A
+byte-identical gate cannot tell a window that was returned from one that was
+kept, so this is a case where only a counter can see the thing:
+
+```text
+s5-log-stream: 10000 captures, 2603127 bytes of raw text, 0 window growths
+one 60,004-byte value: 2 growths, 1 handed back
+```
+
+Every byte of every document accounted for, one copy per document where
+upstream did 2,603,127 pushes, and **not one growth on the whole stream** --
+ordinary log lines fit the window they were given. The oversized case doubles
+16 KiB twice to hold 60 KB and returns it. `RAW_CAPTURES`, `RAW_BYTES`,
+`RAW_GROWS` and `RAW_SHRINKS` are new in `src/counters.rs`, and the test lives
+in its own binary because the counters are process-global statics and its six
+sibling cases run in parallel threads -- sharing a binary read 19,670 captures
+for 10,000 documents before the split.
+
+#### The gate, which is where the risk moved
+
+The old capture could not care where the buffer boundaries fell, because it
+copied byte by byte. The new one is only correct if the window really does hold
+every byte of the value, however the reader chooses to hand them over. So
+`tests/b13_raw_range.rs` is entirely about boundaries, each case checked
+against upstream on the same route, against our own untouched `SliceRead`, and
+against the source text:
+
+- values of 1 to 40,000 elements, straddling the 8 KiB refill and the 16 KiB
+  window, the largest forcing the growth path;
+- whitespace runs of 1 to 20,000 bytes *inside* a captured value -- the wide
+  scanner skips a run wholesale and no longer records it, which is the exact
+  failure upstream's `test_boxed_raw_value` caught in B7;
+- a `BTreeMap<String, Box<RawValue>>` over a 32 KB document, so `raw_from > 0`
+  and every capture starts at a different offset with consumed bytes before it
+  that must NOT appear in it;
+- all 10,000 S5 documents streamed, each compared to its source line;
+- `byte_offset` after every document, against the same stream read as `Value`
+  and against upstream's offsets -- `StreamDeserializer` finds the next
+  document with it, so a drift there would be silent rather than loud;
+- the window recovery: a 60 KB value followed by more keys in the same
+  document, and by 200 more documents in the same stream;
+
+and every reader case is run three ways: whole-slice, **one byte per `read`**,
+and 8,191-byte blocks so the block boundary and the refill boundary never
+coincide.
+
+#### One thing this does NOT claim
+
+The same change removes a per-byte branch from `next` and `discard` for every
+parse in a `raw_value` build, whether or not a `RawValue` is ever asked for.
+The `Value`/reader arm read 1.05x better. **No claim is made**: that is inside
+this instrument's noise, and B4x and B15 both established here that removed
+work is not saved time. If it matters to someone it needs its own knob A/B.
+
+#### What remains of the 2.25x
+
+The slice arm borrows; the reader arm copies 261 bytes, validates them as
+UTF-8, and allocates a `String` per document -- 10,000 allocations. That
+residual is architectural, not a missing brick: a borrowed `RawValue` over a
+reader would have to hand out a slice of a buffer the parser is still moving.
+Recorded so it is not re-litigated.

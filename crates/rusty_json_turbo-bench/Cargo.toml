@@ -63,6 +63,12 @@ float_roundtrip = ["turbo/float_roundtrip", "serde_json_upstream/float_roundtrip
 arbitrary_precision = ["turbo/arbitrary_precision", "serde_json_upstream/arbitrary_precision"]
 raw_value = ["turbo/raw_value", "serde_json_upstream/raw_value"]
 unbounded_depth = ["turbo/unbounded_depth", "serde_json_upstream/unbounded_depth"]
+# The LIBRARY's work counters, which are a different instrument from the
+# allocation census above: `profile` here counts this harness's allocations,
+# `count-work` counts the parser's own work. Brick B13 needs it, because
+# growing and returning the reader window has no output difference to gate it
+# with -- only a counter can say the growth happened and was handed back.
+count-work = ["turbo/profile"]
 
 # A crate-level table replaces the workspace table entirely, so the workspace
 # rows are repeated here. The extra row: the fixture files are verbatim from

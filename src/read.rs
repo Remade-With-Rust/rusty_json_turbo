@@ -281,8 +281,17 @@ where
     line_at_base: usize,
     /// Absolute offset of the first byte of the line containing `base`.
     sol_at_base: usize,
+    /// `Some` while a `RawValue` is being captured. BRICK B13.
+    ///
+    /// It stays EMPTY: the captured bytes are taken from the window in one
+    /// copy at `end_raw_buffering`, and this is only the flag that says a
+    /// capture is running -- kept as a `Vec` so that a nested capture behaves
+    /// exactly as upstream's did.
     #[cfg(feature = "raw_value")]
     raw_buffer: Option<Vec<u8>>,
+    /// Index in `buf` of the first byte of the value being captured.
+    #[cfg(feature = "raw_value")]
+    raw_from: usize,
 }
 
 /// JSON input source that reads from a slice of bytes.
@@ -344,6 +353,8 @@ where
             sol_at_base: 0,
             #[cfg(feature = "raw_value")]
             raw_buffer: None,
+            #[cfg(feature = "raw_value")]
+            raw_from: 0,
         }
     }
 
@@ -358,16 +369,52 @@ where
     #[cold]
     #[inline(never)]
     fn fill(&mut self) -> Result<()> {
-        if self.pos > 0 {
+        // BRICK B13. While a `RawValue` is being captured its bytes have to
+        // stay addressable, so the window is drained only as far as where the
+        // capture STARTS rather than as far as `pos`. Everything before
+        // `raw_from` is consumed and unreachable, so dropping that much is
+        // free, and what is held is bounded by the size of the value -- which
+        // is exactly what upstream's raw buffer held anyway.
+        #[cfg(feature = "raw_value")]
+        let drop_to = if self.raw_buffer.is_some() {
+            // The whole prefix before the capture goes, so `raw_from` lands
+            // on 0 -- which `take` does in the same move as reading it.
+            core::mem::take(&mut self.raw_from)
+        } else {
+            self.pos
+        };
+        #[cfg(not(feature = "raw_value"))]
+        let drop_to = self.pos;
+
+        if drop_to > 0 {
             // The bytes about to be dropped are the only place the line
             // counters can be advanced from, so roll them forward first.
-            self.roll_lines(self.pos);
-            self.buf.copy_within(self.pos..self.filled, 0);
-            self.filled -= self.pos;
-            self.base += self.pos;
-            self.pos = 0;
+            self.roll_lines(drop_to);
+            self.buf.copy_within(drop_to..self.filled, 0);
+            self.filled -= drop_to;
+            self.base += drop_to;
+            self.pos -= drop_to;
         }
-        if self.eof || self.filled == self.buf.len() {
+        if self.eof {
+            return Ok(());
+        }
+        if self.filled == self.buf.len() {
+            // A full window with nothing droppable is only reachable while
+            // capturing a `RawValue` whose text is longer than the buffer:
+            // otherwise the drain above frees the whole consumed prefix, and
+            // `fill` is only ever called with the window spent. Grow instead
+            // of sliding, so the captured bytes stay put; doubling keeps the
+            // number of growths logarithmic in the size of the value.
+            #[cfg(feature = "raw_value")]
+            {
+                debug_assert!(
+                    self.raw_buffer.is_some(),
+                    "the window can only be full with nothing to drop while capturing"
+                );
+                crate::counters::add(&crate::counters::RAW_GROWS, 1);
+                self.buf.resize(self.buf.len() * 2, 0);
+            }
+            #[cfg(not(feature = "raw_value"))]
             return Ok(());
         }
         // A short read is fine and expected from a pipe or socket: the caller
@@ -495,17 +542,13 @@ where
 {
     #[inline]
     fn next(&mut self) -> Result<Option<u8>> {
-        let ch = match self.ch.take() {
-            Some(ch) => Some(ch),
-            None => tri!(self.pull()),
-        };
-        #[cfg(feature = "raw_value")]
-        {
-            if let (Some(ch), Some(buf)) = (ch, &mut self.raw_buffer) {
-                buf.push(ch);
-            }
+        // No `RawValue` push here: brick B13 takes the captured text as one
+        // range from the window, so this is the same two instructions whether
+        // or not the `raw_value` feature is on.
+        match self.ch.take() {
+            Some(ch) => Ok(Some(ch)),
+            None => self.pull(),
         }
-        Ok(ch)
     }
 
     #[inline]
@@ -519,19 +562,9 @@ where
         }
     }
 
-    #[cfg(not(feature = "raw_value"))]
     #[inline]
     fn discard(&mut self) {
         self.ch = None;
-    }
-
-    #[cfg(feature = "raw_value")]
-    fn discard(&mut self) {
-        if let Some(ch) = self.ch.take() {
-            if let Some(buf) = &mut self.raw_buffer {
-                buf.push(ch);
-            }
-        }
     }
 
     /// THE POINT OF BRICK B7: run the wide whitespace scanner over the window.
@@ -554,12 +587,6 @@ where
         if let Some(c) = self.ch {
             if !is_ws(c) {
                 return Ok(Some(c));
-            }
-            #[cfg(feature = "raw_value")]
-            {
-                if let Some(buf) = &mut self.raw_buffer {
-                    buf.push(c);
-                }
             }
             self.ch = None;
         }
@@ -585,16 +612,11 @@ where
         loop {
             let at = first_non_ws_in(&self.buf[..self.filled], self.pos);
             // A `RawValue` captures the raw TEXT of a value, whitespace and
-            // all, and upstream captured it through `discard`, which pushed
-            // every skipped byte. Skipping a run wholesale has to push it
-            // wholesale, or `{"foo": 2}` comes back as `{"foo":2}` -- which is
-            // exactly what `test_boxed_raw_value` caught here.
-            #[cfg(feature = "raw_value")]
-            {
-                if let Some(raw) = &mut self.raw_buffer {
-                    raw.extend_from_slice(&self.buf[self.pos..at]);
-                }
-            }
+            // all -- `{"foo": 2}` must not come back as `{"foo":2}`, which is
+            // what upstream's `test_boxed_raw_value` caught when an earlier
+            // version of this override skipped a run without recording it.
+            // Nothing is recorded here any more: brick B13 takes the whole
+            // range at the end, whitespace included.
             if at < self.filled {
                 // Pull it: `pos` moves past the byte and `ch` holds it, which
                 // is the state a `peek` would have left.
@@ -675,8 +697,25 @@ where
         }
     }
 
+    /// BRICK B13: a `RawValue` over a reader as a RANGE, not a byte stream.
+    ///
+    /// Upstream captured a `RawValue` by pushing every byte into a `Vec` as it
+    /// was consumed, through `next` and `discard`. Priced on a 10,000-document
+    /// log stream, `RawValue` over a reader ran at 257 MB/s against **1,074
+    /// MB/s for the same values over a slice** -- 4.18x -- and sat at parity
+    /// with upstream (1.009x), because the per-byte push, not the parse, was
+    /// the cost.
+    ///
+    /// The bytes are already contiguous in the window, so all this has to
+    /// record is where the value starts; `fill` then holds the window from
+    /// there and `end_raw_buffering` takes it in one copy.
+    ///
+    /// A byte sitting in `ch` has been PULLED but not CONSUMED, and upstream
+    /// pushed it only if it was later consumed -- so the start is `pos` less
+    /// that byte, which is the same arithmetic as `byte_offset`.
     #[cfg(feature = "raw_value")]
     fn begin_raw_buffering(&mut self) {
+        self.raw_from = self.pos - usize::from(self.ch.is_some());
         self.raw_buffer = Some(Vec::new());
     }
 
@@ -685,7 +724,31 @@ where
     where
         V: Visitor<'de>,
     {
-        let raw = self.raw_buffer.take().unwrap();
+        // Whatever is in `ch` was peeked to END the value and is not part of
+        // it -- a number stops on the byte after its last digit.
+        let end = self.pos - usize::from(self.ch.is_some());
+        let mut raw = self.raw_buffer.take().unwrap();
+        // ONE copy, of exactly the right size: `extend_from_slice` on an empty
+        // `Vec` reserves the slice's length, and `String::from_utf8` then
+        // takes the allocation as it stands.
+        crate::counters::add(&crate::counters::RAW_CAPTURES, 1);
+        crate::counters::add(&crate::counters::RAW_BYTES, (end - self.raw_from) as u64);
+        raw.extend_from_slice(&self.buf[self.raw_from..end]);
+        // Give any growth back. A value longer than the window grew `buf`,
+        // and a stream carrying one enormous value must not go on paying for
+        // it on every document after -- upstream allocated a fresh `Vec` per
+        // value and freed it each time, and this has to be no worse. In the
+        // common case the window never grew and this is one length compare.
+        if self.buf.len() > IO_CHUNK * 2 && self.filled - self.pos <= IO_CHUNK * 2 {
+            self.roll_lines(self.pos);
+            self.buf.copy_within(self.pos..self.filled, 0);
+            self.filled -= self.pos;
+            self.base += self.pos;
+            self.pos = 0;
+            self.buf.truncate(IO_CHUNK * 2);
+            self.buf.shrink_to_fit();
+            crate::counters::add(&crate::counters::RAW_SHRINKS, 1);
+        }
         let raw = match String::from_utf8(raw) {
             Ok(raw) => raw,
             Err(_) => return error(self, ErrorCode::InvalidUnicodeCodePoint),

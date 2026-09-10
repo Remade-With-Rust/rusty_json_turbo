@@ -237,6 +237,19 @@ jobs:
           grep -q 'work parity: 2600 frames' b6.txt             || { echo '::error::the B6 probe arms no longer build identical values'; exit 1; }
       - name: Nothing reaches deserialize_in_place (brick B14)
         run: cargo test -p rusty_json_turbo-bench --release --locked --test b14_reachability
+      # B13's gate, and it has to ASK for `raw_value` or it tests nothing: the
+      # tests are `#![cfg(feature = "raw_value")]`, so without the feature they
+      # compile to an empty binary that passes -- the same silent-skip shape as
+      # the `.ndjson` filter bug and the opt-in island above.
+      #
+      # `count-work` on the second line is not decoration. B13 grows the reader
+      # window for an oversized capture and hands the growth back afterwards,
+      # and NEITHER event changes a byte of output, so only the library's own
+      # counters can say the growth happened and was returned.
+      - name: A RawValue over a reader is captured as a range (brick B13)
+        run: |
+          cargo test -p rusty_json_turbo-bench --release --locked --features raw_value --test b13_raw_range
+          cargo test -p rusty_json_turbo-bench --release --locked --features raw_value,count-work --test b13_counters
       # The island is OPT-IN now (it lost to upstream on 13 of 15 cells), so
       # these gates must ask for it explicitly or they would silently test
       # nothing -- the same silent-skip shape as the `.ndjson` filter bug.
