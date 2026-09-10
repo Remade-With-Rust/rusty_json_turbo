@@ -491,6 +491,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "rusty_json_turbo-wasmdemo"
+version = "0.1.0"
+dependencies = [
+ "rusty_json_turbo",
+]
+
+[[package]]
 name = "ryu"
 version = "1.0.23"
 source = "registry+https://github.com/rust-lang/crates.io-index"

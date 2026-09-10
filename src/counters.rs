@@ -260,6 +260,27 @@ pub const fn enabled() -> bool {
     cfg!(feature = "profile")
 }
 
+/// Whether the optional SIMD island is linked (the `accel` feature).
+///
+/// [`isa`] cannot answer this. Off `x86_64` the island's own answer is
+/// `"swar"`, which is exactly what the in-crate SWAR reports, so the two
+/// configurations are indistinguishable by ISA name alone.
+///
+/// **It has to be distinguishable, because one counter means two things.**
+/// [`ESC_STEPS`] is incremented by this crate's escape scanner once per 8-byte
+/// chunk, and by the island once per CALL -- the island is a separate `no_std`
+/// crate with no access to these statics, so it cannot count chunks even in
+/// principle. Measured on `twitter`, the same document reads 101,382 steps
+/// without the island and 19,327 with it: about one per string rather than one
+/// per chunk. A census that did not know which build it was looking at would
+/// read the second as a nineteen-byte step and conclude something impossible.
+///
+/// Found by `tests/m6_arch_census.rs` failing on exactly that.
+#[must_use]
+pub const fn accel_linked() -> bool {
+    cfg!(feature = "accel")
+}
+
 /// Add to a counter. Compiles to nothing without `profile`.
 #[inline(always)]
 pub fn add(counter: &AtomicU64, by: u64) {

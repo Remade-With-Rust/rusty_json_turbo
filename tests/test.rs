@@ -1629,7 +1629,11 @@ fn test_serialize_map_with_no_len() {
     assert_eq!(s, expected);
 }
 
-#[cfg(not(miri))]
+// WASI has no TCP listener and no threads, which is the same reason this is
+// already gated out of miri. `wasm32-wasip1` is a TESTED target for this crate
+// (G5 portability), so the gate has to NAME it -- otherwise the whole wasm run
+// aborts on `TcpListener::bind` and every test after it goes unreported.
+#[cfg(not(any(miri, target_family = "wasm")))]
 #[test]
 fn test_deserialize_from_stream() {
     use serde_json::to_writer;

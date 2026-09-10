@@ -248,7 +248,19 @@ pub fn stream_documents(file: File) -> Vec<Vec<u8>> {
 
 /// `<repo>/corpus`, located relative to this crate so tests and the binary
 /// agree wherever they are run from.
+///
+/// `RJT_CORPUS` overrides it, and that is not a convenience -- it is what
+/// makes the harness CROSS-COMPILABLE. `CARGO_MANIFEST_DIR` is baked in at
+/// COMPILE time as an absolute HOST path, so a `wasm32-wasip1` binary built on
+/// Windows carries a string like `F:\coding\...` that WASI cannot open at
+/// all: no drive letters, no backslashes, and no access to any directory the
+/// runtime was not explicitly granted. The wasm gate therefore mounts the repo
+/// and names the corpus through this variable. On a native run nothing
+/// changes.
 pub fn corpus_dir() -> PathBuf {
+    if let Some(dir) = std::env::var_os("RJT_CORPUS") {
+        return PathBuf::from(dir);
+    }
     Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("..")
         .join("..")

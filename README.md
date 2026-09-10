@@ -57,7 +57,7 @@ exists today:
 | Output bytes, errors, float bits | the reference | **byte-identical by contract**, gated per commit |
 | C / `*-sys` in the dependency tree | none | **none** |
 | `unsafe` | 12 sites | 12 sites inherited; **M2 moves them to one audited island** |
-| `no_std + alloc`, `wasm32` | yes | **yes**, checked on 8 targets in CI |
+| `no_std + alloc`, `wasm32` | yes | **yes** -- compiled on 9 targets, and both *tested*: the suite runs on `wasm32-wasip1`, `no_std + alloc` runs in four feature configurations, and the browser target's output bytes are checksum-matched to native |
 | License | MIT OR Apache-2.0 | **MIT OR Apache-2.0** |
 | Speed | the baseline | **measured before claimed** -- see the ledger |
 
@@ -437,13 +437,55 @@ target/release/rjson-bench diff-oracle path/to/*.json   # the gate, on your own 
 
 ## Platform support
 
+**Compiled** means `cargo check` in three feature configurations. **Tested**
+means the real test suite runs there. The distinction is the point: a check
+cannot catch a wrong *answer*, and the places a JSON parser gets a different
+answer on a different target are real ones -- `usize` width in the recursion
+guard and the reader's window arithmetic, float formatting, and byte order
+anywhere a multi-byte load is used, which this crate does on the whitespace
+scan, the escape scan and the eight-digit number fold.
+
 | Platform | Status |
 |---|---|
-| Linux x86_64 / aarch64 (gnu, musl) | checked in CI |
-| Windows x86_64 / aarch64 | checked in CI; tested on x86_64 |
-| macOS x86_64 / aarch64 | checked in CI; tested on arm64 |
-| `wasm32-unknown-unknown` | checked in CI (`std` and `alloc`) |
-| `no_std + alloc` (`aarch64-unknown-none` probe) | checked in CI |
+| Linux x86_64 (gnu, musl) | compiled; **full suite tested in CI** |
+| Windows x86_64 | compiled; **full suite tested in CI** |
+| macOS aarch64 | compiled; **full suite tested in CI**, and the per-arch census runs there |
+| Linux aarch64 (musl), Windows aarch64, macOS x86_64 | compiled in CI |
+| `wasm32-wasip1` | **full suite tested under wasmtime**: 249 library tests, the differential oracle over the whole corpus, the soak, and every brick gate |
+| `wasm32-unknown-unknown` (the browser target) | compiled, **and its output bytes are checksum-compared with native** -- see below |
+| `no_std + alloc` | compiled on every target above, **and RUN** in four feature configurations, natively and on wasm |
+| `no_std` with no `std` at all (`aarch64-unknown-none`) | compiled in CI |
+
+Two of those deserve spelling out, because they are the ones most projects
+claim without checking.
+
+**The differential oracle passes on `wasm32`.** Output bytes, `Value`, error
+text with line and column, float bit patterns and `StreamDeserializer` offsets
+-- all identical to upstream serde_json, over 94 documents, on a **32-bit**
+target.
+
+**The browser target is checked by checksum, not by assertion.**
+`wasm32-wasip1` has a platform underneath it; a browser does not. So
+`crates/rusty_json_turbo-wasmdemo` embeds three corpus documents, parses and
+re-serializes them inside `wasm32-unknown-unknown`, and its FNV-1a of the
+output bytes must equal native's exactly -- including **2,063,469 bytes of
+re-serialized `canada`**, which is 2.25 MB of floating point and the one value
+family where a difference would be a silent wrong answer rather than a crash.
+The parser is linked alloc-only there, and the module is asserted to need **no
+host imports at all**.
+
+**A per-arch census guards the thing no output gate can see.** The wide
+scanners are 8-byte SWAR behind length guards, so an architecture where those
+guards never passed would produce completely correct output at the speed of
+the per-byte fallback. The census asserts they are reached, and measured, every
+counter reading on `wasm32` is byte-for-byte identical to `x86_64`.
+
+**NEON and simd128 twins are deliberately not shipped**, and the reason is
+measured rather than asserted: the corpus's mean whitespace run is 7.2 bytes
+with the longest at 29, so a 16-byte vector kernel has the same problem AVX2
+had at 32 -- which lost on every cell but one. Plus there is no aarch64
+hardware here to measure on, and this project does not ship unmeasured
+optimisations. The full argument is in [`corpus/LEDGER.md`](corpus/LEDGER.md).
 
 ## Roadmap
 
@@ -455,7 +497,8 @@ target/release/rjson-bench diff-oracle path/to/*.json   # the gate, on your own 
 - [ ] **M3** -- the `-accel` island: SSE2/AVX2 whitespace, string, escape and ASCII kernels
 - [ ] **M4** -- the serde fork earns its keep: shared identifier matcher, field-index handshake
 - [ ] **M5** -- the campaign to the G2 speed gates
-- [ ] **M6** -- NEON and simd128 twins
+- [x] **M6** -- portability: the suite on `wasm32-wasip1`, `no_std` executed rather than checked, a per-arch census, and the browser target's bytes checksum-matched to native (2026-09-10)
+  <br><sub>NEON and simd128 twins are a written, measured note rather than code -- the corpus's 7.2-byte mean whitespace run rules out a 16-byte kernel, and there is no aarch64 hardware to measure one on. Still open: aarch64-Linux is compiled but not tested</sub>
 - [ ] **M7** -- consumer swap: rusty_time-api, mid, deputy, mata-master
 - [ ] **M8** -- use-protection-please audit, 30 days of fuzzing, v1.0
 

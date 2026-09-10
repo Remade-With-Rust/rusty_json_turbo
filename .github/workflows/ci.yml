@@ -75,6 +75,17 @@ jobs:
           for f in preserve_order float_roundtrip arbitrary_precision raw_value unbounded_depth; do
             cargo test -p rusty_json_turbo-bench --locked --features "$f" --test oracle
           done
+      # THE PER-ARCH CENSUS, on each runner's own architecture. `macos-latest`
+      # is Apple Silicon, so this is where aarch64 gets EXECUTED rather than
+      # only compile-checked -- and the census prints the arch it ran on, so
+      # if that ever stops being true the coverage does not vanish silently.
+      #
+      # What it guards is invisible to every output gate: the wide scanners are
+      # 8-byte SWAR behind length guards, so an architecture where those guards
+      # never passed would produce completely correct output at the speed of
+      # the per-byte fallback.
+      - name: The wide kernels are reached on this architecture
+        run: cargo test -p rusty_json_turbo-bench --locked --features count-work --test m6_arch_census -- --nocapture
       - name: CLI and seam
         run: |
           cargo test -p rusty_json_turbo-cli -p rusty_json_turbo-alloc --locked
@@ -122,11 +133,117 @@ jobs:
       # rust-toolchain.toml selects the pinned toolchain; a target given to the
       # action lands on `stable`, not on it. Add it to the active toolchain.
       - run: rustup target add aarch64-unknown-none
+      # `cargo check` here proves every public item RESOLVES without `std`,
+      # which a check of the library alone does not: an unreferenced
+      # `#[cfg(feature = "std")]` item is not an error until something names
+      # it, and `pub use serde_json::*;` names them all.
       - run: cargo check --manifest-path tests/crate/Cargo.toml --no-default-features --features alloc
       - run: cargo check --manifest-path tests/crate/Cargo.toml --no-default-features --features alloc,arbitrary_precision
       - run: cargo check --manifest-path tests/crate/Cargo.toml --no-default-features --features alloc,raw_value
+      # A target with no `std` AT ALL, so nothing can quietly fall back to it.
       - run: cargo check --manifest-path tests/crate/Cargo.toml --target aarch64-unknown-none --no-default-features --features alloc
+      # AND IT HAS TO RUN. Until M6 the `--no-default-features --features
+      # alloc` configuration was checked on eight targets and executed on
+      # NONE, so its `#[cfg(not(feature = "std"))]` branches -- the error type,
+      # and `IoRead`'s absence -- had never run once. The probe now asserts
+      # real answers, including exact error text and line/column, through an
+      # ordinary std test target that calls into the `no_std` library (an
+      # integration test is a separate crate, so the library still links no
+      # `std`).
+      - run: cargo test --manifest-path tests/crate/Cargo.toml --no-default-features --features alloc
+      - run: cargo test --manifest-path tests/crate/Cargo.toml --no-default-features --features alloc,raw_value
+      - run: cargo test --manifest-path tests/crate/Cargo.toml --no-default-features --features alloc,arbitrary_precision
+      - run: cargo test --manifest-path tests/crate/Cargo.toml --no-default-features --features alloc,float_roundtrip
       - run: cargo check -p rusty_json_turbo --locked --features profile
+
+
+  # WASM IS A TESTED TARGET, not a checked one -- G5 asks for a run under
+  # wasmtime and this is it. The distinction matters: `cargo check` cannot
+  # catch a wrong ANSWER, and the places a JSON parser gets a different answer
+  # on a different target are real. Every buffer index, the recursion guard and
+  # `IoRead`'s window arithmetic are `usize`, which is 32 bits here and 64
+  # everywhere else in this matrix, and `src/swar.rs` does 8-byte loads on the
+  # whitespace scan, the escape scan and the eight-digit number fold.
+  #
+  # `wasm32-unknown-unknown` stays check-only in the matrix above: it has no
+  # platform for libtest to stand on. `wasm32-wasip1` does, so the real suite
+  # runs.
+  wasm:
+    name: wasm32-wasip1 under wasmtime
+    runs-on: ubuntu-latest
+    env:
+      # WASI can only open directories it was explicitly granted, has no drive
+      # letters, and resolves nothing from `CARGO_MANIFEST_DIR` (which is baked
+      # in at compile time as an absolute HOST path). So the repo is mounted at
+      # a guest path and the corpus is named through `RJT_CORPUS`.
+      CARGO_TARGET_WASM32_WASIP1_RUNNER: wasmtime --dir=${{ github.workspace }}::/repo --env RJT_CORPUS=/repo/corpus
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-wasip1
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: wasm32-wasip1
+      # The Bytecode Alliance's own action for their own runtime, pinned.
+      - uses: bytecodealliance/actions/wasmtime/setup@v1
+        with:
+          version: "48.0.1"
+      - run: wasmtime --version
+      # `rust-toolchain.toml` pins the toolchain, and a target passed to the
+      # action lands on `stable` rather than on it -- the same trap the
+      # `portable` job documents.
+      - run: rustup target add wasm32-wasip1
+      - name: The library's own suite, on wasm
+        run: cargo test -p rusty_json_turbo --locked --target wasm32-wasip1
+      - name: The differential oracle vs upstream serde_json, on wasm
+        run: cargo test -p rusty_json_turbo-bench --locked --target wasm32-wasip1 --test oracle
+      - name: The differential soak, on wasm
+        run: cargo test -p rusty_json_turbo-bench --locked --target wasm32-wasip1 --test soak
+        env:
+          RJT_SOAK: 20000
+      - name: Cold paths, brick gates and reachability, on wasm
+        run: |
+          cargo test -p rusty_json_turbo-bench --locked --target wasm32-wasip1 --test s6_cold_paths
+          cargo test -p rusty_json_turbo-bench --locked --target wasm32-wasip1 --test b14_reachability
+          cargo test -p rusty_json_turbo-bench --locked --target wasm32-wasip1 --test b15s_key_fold
+          cargo test -p rusty_json_turbo-bench --locked --target wasm32-wasip1 --features raw_value --test b13_raw_range
+          cargo test -p rusty_json_turbo-bench --locked --target wasm32-wasip1 --features raw_value,count-work --test b13_counters
+      # THE PER-ARCH CENSUS. The failure mode it guards is invisible to every
+      # output gate: the wide scanners are 8-byte SWAR behind length guards, so
+      # a target where those guards never passed would produce completely
+      # correct output at the speed of the per-byte fallback. Measured, wasm32
+      # produces counter readings byte-for-byte identical to x86_64.
+      - name: The wide kernels are reached on wasm32, and do identical work
+        run: cargo test -p rusty_json_turbo-bench --locked --target wasm32-wasip1 --features count-work --test m6_arch_census -- --nocapture
+      - name: The no_std + alloc configuration RUNS on wasm
+        run: cargo test --manifest-path tests/crate/Cargo.toml --target wasm32-wasip1 --no-default-features --features alloc
+        env:
+          CARGO_TARGET_WASM32_WASIP1_RUNNER: wasmtime
+      # THE BROWSER TARGET, which is a different claim from WASI. Everything
+      # above runs on `wasm32-wasip1`, where there IS a platform underneath --
+      # a filesystem, a clock, an environment. A browser has none of that, so
+      # the browser claim has to be made on `wasm32-unknown-unknown`, and it is
+      # made the only way that cannot be fudged: parse and re-serialize real
+      # corpus documents inside the module and compare the OUTPUT BYTES with
+      # native, through a checksum.
+      #
+      # The parser is linked ALLOC-ONLY there, so this is also the only gate
+      # that proves the alloc-only configuration produces correct bytes on the
+      # browser target rather than merely compiling for it. `canada` is in the
+      # set on purpose: 2.25 MB of floating point is the family most likely to
+      # differ between targets and the one where a difference would be a silent
+      # wrong answer rather than a crash.
+      #
+      # The test also FAILS if the module needs any host import: a Rust cdylib
+      # for this target should have none, and one appearing means a platform
+      # dependency crept into a build claiming not to have one.
+      - name: The browser target's bytes match native, checksum for checksum
+        run: |
+          rustup target add wasm32-unknown-unknown
+          cargo build -p rusty_json_turbo-wasmdemo --locked --target wasm32-unknown-unknown --release
+          node --version
+          cargo test -p rusty_json_turbo-wasmdemo --locked -- --nocapture
 
   msrv:
     name: MSRV 1.85
@@ -237,6 +354,10 @@ jobs:
           grep -q 'work parity: 2600 frames' b6.txt             || { echo '::error::the B6 probe arms no longer build identical values'; exit 1; }
       - name: Nothing reaches deserialize_in_place (brick B14)
         run: cargo test -p rusty_json_turbo-bench --release --locked --test b14_reachability
+      # The same per-arch census the wasm job runs, on this runner's own
+      # architecture -- so the two can be compared, and they agree exactly.
+      - name: The wide kernels are reached on this architecture
+        run: cargo test -p rusty_json_turbo-bench --release --locked --features count-work --test m6_arch_census -- --nocapture
       # B13's gate, and it has to ASK for `raw_value` or it tests nothing: the
       # tests are `#![cfg(feature = "raw_value")]`, so without the feature they
       # compile to an empty binary that passes -- the same silent-skip shape as
@@ -271,6 +392,21 @@ jobs:
             echo "--- RJT_ISA=$isa"
             RJT_ISA=$isa cargo test -p rusty_json_turbo-accel --release --locked
             RJT_ISA=$isa cargo test -p rusty_json_turbo-bench --release --locked               --features turbo/accel --test oracle --test soak
+          done
+      # The census with the island LINKED, at every rung. This is a different
+      # assertion from the census above, and finding out why was M6's sharpest
+      # result: `ESC_STEPS` is incremented by the CRATE's scanner once per
+      # 8-byte chunk and by the ISLAND once per CALL -- the island is a
+      # separate `no_std` crate and cannot reach the parent's statics. The same
+      # document reads 101,382 steps without `accel` and 19,327 with it, and
+      # off x86_64 the two builds are indistinguishable by ISA name because
+      # both say "swar". `counters::accel_linked()` is what tells them apart.
+      - name: The census knows which kernel it is looking at, at every rung
+        shell: bash
+        run: |
+          for isa in scalar swar sse2 avx2; do
+            echo "--- RJT_ISA=$isa"
+            RJT_ISA=$isa cargo test -p rusty_json_turbo-bench --release --locked --features turbo/accel,count-work --test m6_arch_census -- --nocapture
           done
       # The island must also build where there is no x86 at all, falling back
       # to SWAR rather than failing to compile.

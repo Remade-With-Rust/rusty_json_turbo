@@ -1,0 +1,35 @@
+[package]
+name = "rusty_json_turbo-wasmdemo"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+homepage.workspace = true
+rust-version.workspace = true
+description = "The browser-target checksum gate: parse and re-serialize a corpus document inside wasm32-unknown-unknown and prove the bytes match the native answer. Never published."
+publish = false
+
+[lib]
+# `cdylib` is what a browser loads. This is deliberately NOT `wasm32-wasip1`:
+# WASI has a platform underneath it, and `wasm32-unknown-unknown` does not --
+# no filesystem, no clock, no environment. It is the target a page actually
+# gets, so it is the one this gate uses.
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+# ALLOC-ONLY, on purpose. A browser build has no business pulling `std`'s
+# platform shims into the parser, and this is the only gate that proves the
+# alloc-only configuration produces correct BYTES on the browser target rather
+# than merely compiling for it.
+turbo = { package = "rusty_json_turbo", path = "../..", default-features = false, features = [
+    "alloc",
+] }
+
+[lints.rust]
+unsafe_code = "deny"
+unsafe_op_in_unsafe_fn = "deny"
+missing_docs = "warn"
+
+[lints.clippy]
+undocumented_unsafe_blocks = "deny"

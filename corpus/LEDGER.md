@@ -2749,3 +2749,259 @@ why B15s could not pay: the sink was never the cost.
 
 The fourth is not a code problem at all: it is a bar defined against a
 comparison that carries more bias than the bar allows.
+
+### 2026-09-10 -- M6: wasm is now TESTED, no_std now RUNS, and the census goes per-arch
+
+The question M6 answers is "are we functional on pc, mac, linux and wasm?" --
+and before today the honest answer was "the library compiles on all of them,
+and we have never run it on wasm or in its `no_std` configuration anywhere."
+Both of those are now executed rather than assumed, and finding out cost three
+real defects.
+
+#### What was already true
+
+The full test suite runs on **ubuntu, windows and macos** in CI, on every
+push, with the corpus hash verified on each of the three -- that check exists
+because its absence hid a real CRLF defect. The library `cargo check`s on the
+**eight targets the house ships**, in three feature configurations each. So
+pc/mac/linux were genuinely covered.
+
+**wasm was not.** `wasm32-unknown-unknown` was in the check matrix and nothing
+more, and `wasm32-unknown-unknown` cannot run tests -- it has no platform for
+libtest to stand on.
+
+#### wasm32-wasip1 is the target that can actually run, and now does
+
+| what | result on `wasm32-wasip1` under wasmtime 48 |
+|---|---|
+| the library's own suite | **249 tests, 0 failures** |
+| the differential oracle vs upstream serde_json | **4/4 over the whole corpus** |
+| the differential soak (generated + mutated + numeric) | 3/3, 20,000 cases |
+| S6 cold paths, all three routes | 7/7 |
+| B13 `RawValue` range + its counters | 6/6 and 1/1 |
+| compact struct-stringify vs upstream | 3/3 |
+| B14 reachability, AP probe | 7/7, 3/3 |
+| the `no_std` + `alloc` probe | 2/2 |
+
+**The oracle passing on wasm32 is the strongest portability statement this
+project can make**: bytes, `Value`, error text with line and column, float bit
+patterns and `StreamDeserializer` offsets, all identical to upstream
+serde_json, over 94 documents, on a **32-bit** target. Every buffer index, the
+recursion guard and `IoRead`'s window arithmetic are `usize`, and on wasm32
+that is 32 bits rather than 64.
+
+#### Three defects found by running it
+
+**1. The harness could not be cross-compiled at all.** `corpus_dir()` was
+`env!("CARGO_MANIFEST_DIR")`, which is baked in at COMPILE time as an absolute
+HOST path -- so a wasm binary built on Windows carried the string
+`F:\coding\...`, which WASI cannot open under any circumstances: no drive
+letters, no backslashes, and no access to a directory the runtime was not
+explicitly granted. Every corpus-reading test aborted in `File::load`. Fixed
+with an `RJT_CORPUS` override; native runs are unchanged.
+
+**2. One test cannot run on WASI, and would have aborted the whole binary.**
+`test_deserialize_from_stream` uses `TcpListener::bind` and `thread::spawn`.
+WASI has neither, so it traps -- and a trap takes the process, so **every test
+after it goes unreported**, which is worse than a failure. It was already
+gated `#[cfg(not(miri))]` for exactly this reason, so the wasm gate joins it
+there rather than being hidden in a CI skip list. A named `cfg` cannot
+silently skip on a target where it should run; a `--skip` argument can.
+
+**3. `no_std` had never executed.** `tests/crate/test.rs` was upstream's
+three-line compile probe -- `#![no_std]` and `pub use serde_json::*;`. That
+check is real and stays (it proves every public item resolves without `std`,
+which a `cargo check` of the library alone does not, because an unreferenced
+`#[cfg(feature = "std")]` item is not an error until someone names it). But
+the `--no-default-features --features alloc` configuration was checked on
+eight targets and **run on none**, so its `#[cfg(not(feature = "std"))]`
+branches -- in the error type, and in `IoRead`'s absence -- had never
+executed.
+
+It runs now: `run_all()` parses into `Value`, serializes through `to_string`,
+`to_vec`, `to_string_pretty` and `to_vec_pretty`, walks the number tower to
+both `i64` limits and `u64::MAX`, asserts error text AND line/column on four
+error shapes, walks a `Map`, round-trips a surrogate pair, rejects a lone
+surrogate and invalid UTF-8, and checks that a string needing unescaping is
+refused as a borrow but accepted as a `String`. It is a plain `pub fn` because
+libtest needs `std`; `tests/no_std_runs.rs` is an ordinary std test target that
+calls it, which works because an integration test is a separate crate and does
+not make the library link `std`.
+
+**It passed first time, including every exact error string and column.**
+
+#### The per-arch census, and it is exact
+
+G5 asks for a census. `tests/m6_arch_census.rs` asserts, on whatever
+architecture it runs on, that the wide kernels are REACHED -- because the
+failure mode here is invisible to any output gate: this crate's scanners are
+8-byte SWAR behind length guards, and a target where those guards never passed
+would produce **completely correct output at the speed of the per-byte
+fallback**.
+
+The result is better than "reached". It is *identical*:
+
+| counter | x86_64, 64-bit | wasm32, 32-bit |
+|---|---:|---:|
+| whitespace runs / bytes | 169,287 / 1,226,905 | 169,287 / 1,226,905 |
+| eight-digit fold hits / calls | 108,878 / 331,084 | 108,878 / 331,084 |
+| escape-scan steps / bytes | 101,382 / 367,917 | 101,382 / 367,917 |
+
+**Every reading is byte-for-byte the same on a 32-bit target.** The fold's
+108,878/331,084 is the same figure the B4 row has carried since 2026-09-09.
+
+**The census's first version was WRONG, and the counter caught it.** It
+asserted "the wide path covers about 8 bytes per step" and failed: twitter
+measures **3.63** bytes per step with the wide path fully engaged. The reason
+is that `scan_to_escape` has no scalar peel, deliberately -- so a string of
+length L costs `L / 8` wide steps plus `L % 8` TAIL steps, and twitter's mean
+string is 20 bytes: two chunks and a four-byte tail, six steps for twenty
+bytes. So the census now PREDICTS the step count from the document's own
+string lengths instead of guessing a ratio: it predicts 100,650 and the
+counter reads 101,382, a 0.7% excess exactly accounted for by the 1,228
+escape restarts. The per-byte fallback would read 367,917. There is no way to
+confuse the two.
+
+#### The census found an instrument defect: one counter, two meanings
+
+Run with the island linked, the census FAILED -- and it was right to. On the
+same `twitter` document the escape scanner reported **19,327 steps for 367,917
+bytes**, which is nineteen bytes per step and impossible for an 8-byte kernel.
+
+The explanation is not in the kernel, it is in the counter. `ESC_STEPS` is
+incremented by **this crate's** scanner once per 8-byte chunk, and by **the
+island** once per CALL -- the island is a separate `no_std` crate with no
+access to the parent's statics, so it cannot count chunks even in principle.
+19,327 is about one step per string, next to 18,974 fragments.
+
+So the same counter name carries two different units depending on a feature
+flag, and off `x86_64` the two configurations are **indistinguishable by ISA
+name**: the island's own answer there is `"swar"`, exactly what the in-crate
+SWAR reports. A census that did not know which build it was looking at would
+have read 19 bytes per step as a triumph.
+
+`counters::accel_linked()` now exists for this, and the census asserts the
+exact chunk prediction only for the in-crate path, and a much weaker
+"entered about once per string, not once per byte" claim for the island. **The
+weaker claim is recorded as a gap rather than dressed up**: with the island
+linked, this project currently cannot assert per-byte reachability from
+counters alone, because the counter it would need lives on the wrong side of a
+crate boundary.
+
+#### The island itself is portable, and that is checked
+
+| what | result |
+|---|---|
+| the island's own oracle (>500,000 assertions per scanner) on `wasm32` | 5/5 |
+| the differential oracle with `accel` ON, on `wasm32` | 4/4 |
+| the island compiles on `aarch64-unknown-linux-musl`, `aarch64-apple-darwin`, `wasm32-unknown-unknown` | yes |
+
+Off `x86_64` the island resolves to its own SWAR rung, so turning `accel` on
+where there is no x86 does not fail to compile and does not change an answer
+-- it just does not help. That is the behaviour a portable opt-in should have,
+and now it is tested rather than assumed.
+
+#### The browser target is a different claim, and it is now checked too
+
+Everything above runs on `wasm32-wasip1`, where there IS a platform underneath
+-- a filesystem, a clock, an environment. **A browser has none of that.** So
+"it works in a browser" has to be claimed on `wasm32-unknown-unknown`, and
+M6's exit criteria asked for it in the one form that cannot be fudged: a
+checksum of the OUTPUT BYTES, compared with native.
+
+`crates/rusty_json_turbo-wasmdemo` is that gate. It embeds three corpus
+documents with `include_bytes!` (there is no filesystem to read them from),
+parses each into a `Value`, re-serializes it, and returns an FNV-1a of the
+result -- a hash chosen because it is exactly reproducible with integer
+arithmetic alone, so the checksum cannot itself vary by target. Four
+integer-in, integer-out exports, so no strings cross the boundary and there is
+no allocator protocol for the two sides to agree on. `tools/wasmdemo.mjs`
+runs it under Node, which is the same V8 a browser runs.
+
+| document | output bytes | checksum, native AND `wasm32-unknown-unknown` |
+|---|---:|---|
+| s4-node-config | 4,237 | `0x25f98f4cc44b0621` |
+| twitter | 466,906 | `0xe5bbb58071769394` |
+| **canada** | **2,063,469** | `0xef43c96225e93260` |
+| folded | -- | `0x88aa165264ad6938` |
+
+**`canada` is the one that matters.** 2.25 MB of floating point is the value
+family most likely to differ between targets, and the only one where a
+difference would be a **silent wrong answer** rather than a crash -- and
+`zmij`'s Schubfach formatter produces byte-identical text on wasm32.
+
+Two things the gate asserts beyond equality:
+
+- **The parser is linked ALLOC-ONLY**, so this is also the only gate proving
+  the alloc-only configuration produces correct BYTES on the browser target
+  rather than merely compiling for it.
+- **The module must need NO host imports.** A Rust `cdylib` for this target
+  should import nothing; the test fails if it does, because an import
+  appearing means a platform dependency crept into a build claiming not to
+  have one. It imports nothing.
+
+The test also refuses to pass quietly when it did not run: if the module is
+not built or Node is absent it prints SKIPPED and says which, because a gate
+that reports success without running is worse than no gate.
+
+#### NEON and simd128: the written note, and the corpus decides it
+
+G5 allows "NEON + simd128 kernels with per-arch census, **or a written note
+why not**". This is the note, and it is argued from measurement rather than
+from effort.
+
+**1. The SIMD island is opt-in because it LOST.** At M3 the island measured
+worse than upstream on 13 of 15 cells and was reversed; the shipping default
+on x86_64 is the portable in-crate 8-byte SWAR. A NEON twin and a simd128
+twin would be second and third instances of the code path that already lost on
+the architecture we can measure.
+
+**2. But the mechanism that killed it does NOT transfer, and saying otherwise
+would be dishonest.** M3's law is that the cost of an unsafe SIMD island is
+the inlining you lose, not the dispatch you pay -- a `#[target_feature]`
+function cannot be inlined into a caller lacking the feature. **NEON is
+baseline on aarch64**, so a NEON kernel needs no `#[target_feature]` and can
+be inlined; wasm's simd128 is a compile-time feature with no runtime dispatch,
+so the same applies. Neither would pay M3's actual cost.
+
+**3. What rules them out is the CORPUS, not the architecture.** The census
+just measured the mean whitespace run at **7.2 bytes**, and the longest run
+anywhere in the corpus is **29**. That is the same arithmetic that made SSE2
+beat AVX2 on every cell and made brick B1s need a 4-byte scalar peel: a
+16-byte vector kernel on a 7.2-byte mean run spends most of its work on runs
+that end before the register does. The escape scanner tells the same story
+from the other side -- **40% of its steps are already tail bytes** on
+twitter's 20-byte mean string. The 8-byte SWAR is not a fallback here; on this
+corpus it is close to the right width, and that is why it is the default on
+x86_64 too.
+
+**4. And the decisive constraint: we cannot measure it, and this project does
+not ship unmeasured optimisations.** There is no aarch64 hardware here; qemu
+timings are meaningless; wasmtime timings are dominated by the runtime and are
+not comparable to native. A kernel written, gated for correctness and shipped
+without a knob A/B would violate the discipline that has already reversed one
+SIMD island and refuted five bricks.
+
+**Revisit when, and only when:** there is aarch64 hardware to run
+`tools/pinvs.ps1` on (an M-series Mac or a Graviton runner), and then the same
+gate as everything else -- a knob A/B against the shipping default, a null
+arm, controls, and the census asserting the new kernel is actually reached.
+The census is written so that a future NEON twin which is NOT reached fails
+the gate instead of passing quietly.
+
+#### What is shipped
+
+One portable 8-byte SWAR kernel on every target; the island opt-in behind
+`accel` on x86_64 for anyone who measures differently on their own corpus; the
+eight-target compile matrix; the full suite on three OSes; **the full suite
+plus the oracle, the soak and every brick gate on wasm32-wasip1, with the
+`no_std` configuration executed rather than assumed; and a browser-target
+checksum that matches native byte for byte on 2.5 MB of strings, floats,
+booleans and nulls.**
+
+What is still open, named rather than left implicit: **aarch64-LINUX is
+compile-checked only.** aarch64 EXECUTION rides on `macos-latest` being Apple
+Silicon -- which the census now prints, so if that ever stops being true the
+coverage does not vanish silently. A Graviton or qemu runner would close it,
+and a qemu one would give correctness without timing, which is all the census
+needs.
