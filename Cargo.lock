@@ -439,7 +439,7 @@ dependencies = [
 
 [[package]]
 name = "rusty_json_turbo"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "automod",
  "indexmap",
@@ -460,18 +460,18 @@ dependencies = [
 
 [[package]]
 name = "rusty_json_turbo-accel"
-version = "0.1.0"
+version = "0.2.0"
 
 [[package]]
 name = "rusty_json_turbo-alloc"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "rusty_alloc-api",
 ]
 
 [[package]]
 name = "rusty_json_turbo-bench"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "rusty_json_turbo",
  "rusty_json_turbo-alloc",
@@ -483,7 +483,7 @@ dependencies = [
 
 [[package]]
 name = "rusty_json_turbo-cli"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "rusty_json_turbo",
  "rusty_json_turbo-alloc",
@@ -492,7 +492,7 @@ dependencies = [
 
 [[package]]
 name = "rusty_json_turbo-wasmdemo"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "rusty_json_turbo",
 ]

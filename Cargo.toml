@@ -45,7 +45,7 @@ name = "serde_json"
 [dependencies]
 # The SIMD island. Ours, pure Rust, no build script, no dependencies of its
 # own -- so the "empty dependency tree" claim in the README still holds.
-rusty_json_turbo-accel = { version = "0.1.0", path = "crates/rusty_json_turbo-accel", default-features = false, optional = true }
+rusty_json_turbo-accel = { version = "0.2.0", path = "crates/rusty_json_turbo-accel", default-features = false, optional = true }
 indexmap = { version = "2.2.3", optional = true }
 itoa = "1.0"
 memchr = { version = "2", default-features = false }
@@ -194,7 +194,15 @@ exclude = ["fuzz", "tests/crate"]
 [workspace.package]
 # One version across the family, bumped together, the way the sibling codec
 # workspaces do it: a consumer that pins one crate can pin them all.
-version = "0.1.0"
+#
+# 0.2.0 (2026-09-10): brick B13 -- `RawValue` over a reader taken as one range
+# instead of a byte-at-a-time push, 1.89x faster than upstream on that path --
+# plus the M6 portability work (the suite runs on wasm32-wasip1, `no_std +
+# alloc` is executed rather than only compiled, and the browser target's output
+# bytes are checksum-matched to native). A minor bump under 0.x because
+# `counters::accel_linked()` is additive and nothing else in the public surface
+# moved; the output contract is unchanged and still gated per commit.
+version = "0.2.0"
 edition = "2021"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/Remade-With-Rust/rusty_json_turbo"
