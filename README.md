@@ -136,13 +136,13 @@ of having instruments first.
 | SIMD whitespace scan | pretty-printed input | an SSE2/AVX2 twin of the above, if the measurement justifies an `unsafe` island | not started |
 | Bulk `Value` map build | DOM parse | build the map from a sorted vector instead of inserting per entry; reserve on sequences | **promoted** — measured allocation-bound, ~1 alloc per 31 input bytes |
 | Arena `Value` (additional type) | DOM parse | bump-allocated nodes, flat objects, interned keys — the shape that gives the fastest competitor its 1.5–3.6x DOM lead | planned, v1.x |
-| SIMD string scan | string-heavy input | 16/32-byte twin of the existing 8-byte SWAR quote/backslash/control scan | planned |
-| Escape-mask writer | stringify | per-chunk "needs escape" mask, one write per clean run | planned |
+| SIMD string scan | string-heavy input | 16/32-byte twin of the existing 8-byte SWAR quote/backslash/control scan | **demoted** — mean string run is 19 bytes, 98.3% already zero-copy, and upstream is already 8-byte SWAR with `memchr2` |
+| **Escape-mask writer** | stringify | per-chunk "needs escape" mask, one write per clean run | ✅ **landed** — see below |
 | **8-digit integer / fraction parse** | number-heavy input | validate and convert eight ASCII digits in one 8-byte load, per-digit tail | ✅ **landed** — see below |
 | Key dispatch + derive handshake | struct parse | length-bucketed match, then a field-index handshake across the serde seam, replacing a linear `memcmp` ladder per key | planned |
 | Buffered reader | `from_reader` | an internal buffer reusing the slice scanners, instead of one iterator call per byte | planned |
-| ASCII fast-path UTF-8 validation | `from_slice` | validate the ASCII run wide, walk only non-ASCII tails | planned |
-| Sink specialisation | stringify | fold separators into adjacent writes; write integers and floats into spare capacity | *repriced* — cannot win by removing allocations (there are none); must win on write-call count |
+| ASCII fast-path UTF-8 validation | `from_slice` | validate the ASCII run wide, walk only non-ASCII tails | **reframed** — 18,099 short validations per `twitter` parse, but validating once up front is *not* byte-identical, so that form is rejected |
+| **Sink specialisation** | stringify | fold separators into adjacent writes; write integers and floats into spare capacity | **promoted** — measured **2.6 bytes per sink call** on `citm_catalog`, about 7.3 calls per key; it must win on call count alone, and the count says there is room |
 | Correctly-rounded float parse | float-heavy input | core's Eisel-Lemire, replacing the vendored bignum path | planned, v1.x, opt-in (it changes output) |
 
 ##### Landed: the whitespace path
@@ -177,6 +177,31 @@ machine. `> 1` means the new path is faster; the session's null-arm floor was
 | citm_catalog | struct parse | 1,361 MB/s | **1,383 MB/s** | **1.017x** |
 | twitter | any workload | — | — | at the floor (1.5% number bytes) |
 | stringify ×6, scan ×3 | — | — | — | 0.999x–1.010x (control, unmoved) |
+
+**Eight bytes per escape step, on stringify** (`twitter` is 57.1% string; the
+escape hit rate is 0.334%):
+
+| file | workload | before | after | ratio |
+|---|---|---:|---:|---:|
+| twitter | struct stringify | 1,774 MB/s | **2,153 MB/s** | **1.208x** |
+| twitter | DOM stringify | 1,837 MB/s | **2,202 MB/s** | **1.200x** |
+| citm_catalog | struct stringify | 1,870 MB/s | **2,007 MB/s** | **1.068x** |
+| citm_catalog | DOM stringify | 1,261 MB/s | **1,306 MB/s** | **1.028x** |
+| parse cells ×2 | — | — | — | 0.995x–1.002x (control, unmoved) |
+
+<sub>Both twitter rows won every one of 61 paired runs bar one, and a best-of-N
+statistic agrees with the median on every row. **The controls are parse cells
+here** — stringify cells were the control for every parse brick so far, and the
+roles simply swap. `canada` is not quoted: it holds 90 string bytes in 2.25 MB,
+so there is nothing for this to win.</sub>
+
+<sub>**The counter that proves it is switched on**, which no output gate can:
+scanner steps fall from 367,917 to 101,382 on `twitter` and 221,379 to 108,825
+on `citm_catalog`, while the count of fragments written stays identical — same
+output, less walking. **And note the opposite tuning to the whitespace scan:**
+that one peels four bytes scalar first because 46% of its runs are a single
+byte; this one has no peel, because a string scan runs the length of a whole
+string. Same technique, opposite shape, because the census said so.</sub>
 
 <sub>The gradient across the three files is the corpus census read back:
 `canada` is 90.1% number and moves most, `citm_catalog` is 7.1% and moves a

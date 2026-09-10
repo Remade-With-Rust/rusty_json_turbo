@@ -2266,6 +2266,9 @@ where
     where
         V: de::Visitor<'de>,
     {
+        // PROBE (brick B6): one per object key the JSON side hands over,
+        // whatever the visitor does with it.
+        crate::counters::add(&crate::counters::KEYS, 1);
         self.de.eat_char();
         self.de.scratch.clear();
         match tri!(self.de.read.parse_str(&mut self.de.scratch)) {

@@ -474,7 +474,19 @@ impl<'a> SliceRead<'a> {
         }
     }
 
+    /// PROBE WRAPPER (brick B2). Counts one run and the bytes it advanced
+    /// over, for every caller, without touching the scanner itself.
+    /// `inline(always)` on a body that compiles to nothing without `profile`,
+    /// so a shipping build is byte-for-byte what it was.
+    #[inline(always)]
     fn skip_to_escape(&mut self, forbid_control_characters: bool) {
+        let from = self.index;
+        self.skip_to_escape_impl(forbid_control_characters);
+        crate::counters::add(&crate::counters::STR_SCANS, 1);
+        crate::counters::add(&crate::counters::STR_BYTES, (self.index - from) as u64);
+    }
+
+    fn skip_to_escape_impl(&mut self, forbid_control_characters: bool) {
         // Immediately bail-out on empty strings and consecutive escapes (e.g. \u041b\u0435)
         if self.index == self.slice.len()
             || is_escape(self.slice[self.index], forbid_control_characters)
@@ -559,10 +571,12 @@ impl<'a> SliceRead<'a> {
                     if scratch.is_empty() {
                         // Fast path: return a slice of the raw JSON without any
                         // copying.
+                        crate::counters::add(&crate::counters::STR_BORROWS, 1);
                         let borrowed = &self.slice[start..self.index];
                         self.index += 1;
                         return result(self, borrowed).map(Reference::Borrowed);
                     } else {
+                        crate::counters::add(&crate::counters::STR_COPIES, 1);
                         scratch.extend_from_slice(&self.slice[start..self.index]);
                         self.index += 1;
                         return result(self, scratch).map(Reference::Copied);
@@ -1204,6 +1218,11 @@ where
 }
 
 fn as_str<'de, 's, R: Read<'de>>(read: &R, slice: &'s [u8]) -> Result<&'s str> {
+    // PROBE (brick B12): this is the whole UTF-8 validation bill for
+    // `from_slice`. `from_str` pays none of it, so the two together bound the
+    // brick without any new code needing to be written.
+    crate::counters::add(&crate::counters::UTF8_CALLS, 1);
+    crate::counters::add(&crate::counters::UTF8_BYTES, slice.len() as u64);
     str::from_utf8(slice).or_else(|_| error(read, ErrorCode::InvalidUnicodeCodePoint))
 }
 

@@ -28,6 +28,26 @@ v1.0.151 tag plus four commits that change no behaviour: remove the deprecated
 pins crates.io **1.0.151** (the tag), so those four commits are themselves under the
 gate and it passes.
 
+### `src/ser.rs`, `src/swar.rs` -- eight bytes per escape step (brick B3)
+
+`format_escaped_str_contents` no longer walks one byte at a time through the
+`ESCAPE` table. It asks `scan_to_escape` for the next byte needing an escape and
+writes the clean run between, which produces the same `write_string_fragment` /
+`write_char_escape` sequence with the same contents in the same order. The
+scanner takes eight bytes per step using three exact SWAR masks, and
+`scan_to_escape_scalar` -- the byte-at-a-time form, straight off upstream's
+table -- stays in the tree permanently as its oracle and is reachable in
+production via `RJT_ESC_WIDE=0`. The exact SWAR primitives moved to a new
+`src/swar.rs` so the one subtle function in this crate has a single definition
+and a single set of tests. Output is unchanged and the oracle gates it.
+
+### `src/read.rs`, `src/ser.rs`, `src/de.rs` -- probe counters
+
+`skip_to_escape` gained an `inline(always)` counting wrapper (the scanner itself
+is untouched, now `skip_to_escape_impl`), and `as_str`, the borrow/copy branches
+of `parse_str_bytes`, `MapKey::deserialize_any` and the escape loop each
+increment a counter. Every one compiles to nothing without `--features profile`.
+
 ### `src/de.rs`, `src/read.rs` -- eight digits per step (brick B4)
 
 `parse_integer` and `parse_decimal` consume eight ASCII digits per iteration via

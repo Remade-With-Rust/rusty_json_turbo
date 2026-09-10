@@ -46,6 +46,32 @@ carry their measured numbers and method line, never an adjective.
   and **deterministic work counters** (`rjson-bench work`, library feature
   `profile`) with an `RJT_*` A/B knob (feature `knobs`) so two implementations
   can be compared inside one binary rather than across two code layouts.
+- **Brick B3**: the serializer's escape scan takes **eight bytes per step**.
+  The escape table is nonzero for exactly `0x00..=0x1F`, `"` and a backslash,
+  and `b < 0x20` is exactly `b & 0xE0 == 0`, so the predicate is three exact
+  SWAR masks with no comparison. Byte-identical: the same
+  `write_string_fragment` / `write_char_escape` calls in the same order.
+  Measured in one binary with one env var between the arms, parse cells as
+  controls: `twitter` struct stringify **1.208x** (61/61, best-of-N 1.207x),
+  `twitter` DOM stringify **1.200x** (60/61, best-of-N 1.189x),
+  `citm_catalog` struct stringify **1.068x** (61/61), DOM stringify 1.028x --
+  with both control cells flat. The escape hit rate that makes it work is
+  **0.334%** on `twitter` and **0.0009%** on `citm_catalog`.
+- **M1-C: every remaining brick priced** by deterministic count rather than
+  guess. B2 (wide string scan) is **demoted to near-closed** -- mean string run
+  is 19.0 bytes, 98.3% of strings already keep the zero-copy borrow, and
+  upstream is already 8-byte SWAR with `memchr2`. B5 (sink) is **promoted
+  against the plan's own gate** -- 2.6 bytes per sink call on `citm_catalog`,
+  about 7.3 calls per key. B12 (UTF-8) is **reframed**: the tempting
+  validate-once-up-front form is not byte-identical and is recorded as
+  rejected. New counters (`STR_*`, `ESC_*`, `KEYS`, `UTF8_*`) plus a counting
+  `io::Write` in the harness. Full worklist: `corpus/LEDGER.md`.
+- **Emitted-asm census** (`tools/asm-census.ps1`, `docs/ASM-CENSUS.md`):
+  per-source-file attribution through CodeView inline-frame chains. 63 panic
+  sites (`de.rs` **zero**, closing `get_unchecked` there; three `read.rs` sites
+  share an `==`-shaped length check that blocks bound folding, opening a safe
+  brick), 46 `mem*` calls with `ser.rs` owning **zero**, and **no
+  auto-vectorisation** anywhere.
 - **Brick B4**: integer and fraction digits are consumed **eight at a time** --
   one 8-byte load, three integer ops to validate, a three-multiply fold -- while
   the significand is below a bound at which eight more digits provably cannot

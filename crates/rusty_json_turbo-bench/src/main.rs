@@ -378,10 +378,25 @@ fn work(args: &[String]) -> ExitCode {
         std::env::var("RJT_WS_FASTPATH").unwrap_or_else(|_| "1 (default)".into()),
         alloc_arm::name()
     );
+    println!();
+    println!("PARSE work -- per document, deterministic");
     println!(
-        "{:<14} {:<14} {:>12} {:>12} {:>12} {:>12} {:>12} {:>14}",
-        "file", "column", "peek", "next", "discard", "ws_runs", "ws_bytes", "d8 hit/call"
+        "{:<14} {:<14} {:>11} {:>11} {:>11} {:>11} {:>11} {:>13} {:>11} {:>11} {:>13} {:>9} {:>16}",
+        "file",
+        "column",
+        "peek",
+        "next",
+        "discard",
+        "ws_runs",
+        "ws_bytes",
+        "d8 hit/call",
+        "str_scans",
+        "str_bytes",
+        "borrow/copy",
+        "keys",
+        "utf8 B/calls"
     );
+    let mut ser_rows: Vec<String> = Vec::new();
     let mut seen = Vec::new();
     for (file, column) in &opts.cells {
         if seen.contains(&(*file, *column)) {
@@ -412,14 +427,60 @@ fn work(args: &[String]) -> ExitCode {
                     drop(turbo::from_slice::<rjt_bench::canada::Canada>(&input).unwrap());
                 }
             },
-            other => {
-                eprintln!("work: {} has no parse to count", other.name());
+            Column::DomStringify | Column::StructStringify => {
+                // Parse FIRST, then reset, so only serialize work is counted.
+                // The sink counts its own calls, which is how brick B5 gets
+                // priced without a library change.
+                let mut sink = rjt_bench::wcount::CountingWriter::with_capacity(input.len());
+                if matches!(column, Column::DomStringify) {
+                    let dom: turbo::Value = turbo::from_slice(&input).unwrap();
+                    turbo::counters::reset();
+                    turbo::to_writer(&mut sink, &dom).unwrap();
+                } else {
+                    match file {
+                        File::Twitter => {
+                            let v: rjt_bench::twitter::Twitter = turbo::from_slice(&input).unwrap();
+                            turbo::counters::reset();
+                            turbo::to_writer(&mut sink, &v).unwrap();
+                        }
+                        File::CitmCatalog => {
+                            let v: rjt_bench::citm_catalog::CitmCatalog =
+                                turbo::from_slice(&input).unwrap();
+                            turbo::counters::reset();
+                            turbo::to_writer(&mut sink, &v).unwrap();
+                        }
+                        File::Canada => {
+                            let v: rjt_bench::canada::Canada = turbo::from_slice(&input).unwrap();
+                            turbo::counters::reset();
+                            turbo::to_writer(&mut sink, &v).unwrap();
+                        }
+                    }
+                }
+                let c = turbo::counters::snapshot();
+                let esc_clean = c.esc_bytes.saturating_sub(c.esc_hits);
+                ser_rows.push(format!(
+                    "{:<14} {:<14} {:>11} {:>11} {:>11} {:>11} {:>9.4}% {:>11} {:>11} {:>11.1}",
+                    file.name(),
+                    column.name(),
+                    c.esc_bytes,
+                    c.esc_hits,
+                    c.esc_frags,
+                    c.esc_steps,
+                    if c.esc_bytes == 0 {
+                        0.0
+                    } else {
+                        c.esc_hits as f64 / c.esc_bytes as f64 * 100.0
+                    },
+                    esc_clean,
+                    sink.total_calls(),
+                    sink.bytes_per_call()
+                ));
                 continue;
             }
         }
         let c = turbo::counters::snapshot().since(before);
         println!(
-            "{:<14} {:<14} {:>12} {:>12} {:>12} {:>12} {:>12} {:>14}",
+            "{:<14} {:<14} {:>11} {:>11} {:>11} {:>11} {:>11} {:>13} {:>11} {:>11} {:>13} {:>9} {:>16}",
             file.name(),
             column.name(),
             c.peek,
@@ -427,8 +488,33 @@ fn work(args: &[String]) -> ExitCode {
             c.discard,
             c.ws_runs,
             c.ws_bytes,
-            format!("{}/{}", c.d8_hits, c.d8_calls)
+            format!("{}/{}", c.d8_hits, c.d8_calls),
+            c.str_scans,
+            c.str_bytes,
+            format!("{}/{}", c.str_borrows, c.str_copies),
+            c.keys,
+            format!("{}/{}", c.utf8_bytes, c.utf8_calls)
         );
+    }
+    if !ser_rows.is_empty() {
+        println!();
+        println!("SERIALIZE work -- per document, deterministic");
+        println!(
+            "{:<14} {:<14} {:>11} {:>11} {:>11} {:>11} {:>10} {:>11} {:>11} {:>11}",
+            "file",
+            "column",
+            "esc_bytes",
+            "esc_hits",
+            "esc_frags",
+            "esc_steps",
+            "hit rate",
+            "clean bytes",
+            "sink calls",
+            "bytes/call"
+        );
+        for row in &ser_rows {
+            println!("{row}");
+        }
     }
     ExitCode::SUCCESS
 }

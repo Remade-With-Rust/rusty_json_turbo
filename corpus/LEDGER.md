@@ -723,3 +723,202 @@ one, so the minimum over N pairs is the least-contaminated estimate each arm has
 of itself. On a machine that will not settle, run more pairs and read both
 statistics: when they agree, and the controls are flat on both, the result
 stands.
+
+### 2026-09-09 -- M1-C: every remaining brick priced, and M2-B3: the escape writer (KEPT)
+
+The M1 exit test asks for a ranked worklist with each brick's ceiling share and
+the arithmetic behind it. This is that worklist. Every number below is a
+deterministic count from `rjson-bench work` (library `--features profile`), not
+a clock, so it is exact and reproducible on any machine under any load.
+
+#### The instruments added to get it
+
+- **`STR_SCANS` / `STR_BYTES` / `STR_BORROWS` / `STR_COPIES`** (brick B2): runs
+  of the escape scanner, bytes it advanced over, and -- the number that
+  matters -- how often the zero-copy borrow was kept versus lost to a scratch
+  copy.
+- **`ESC_BYTES` / `ESC_HITS` / `ESC_FRAGS` / `ESC_STEPS`** (brick B3): bytes the
+  serializer's escape loop examined, how many actually needed escaping, clean
+  runs handed to the writer, and steps the scanner took. `ESC_STEPS` is the
+  counter that says whether a wide path is ENGAGED, which no output gate can
+  say: a fast path that silently stopped being taken still produces the right
+  answer.
+- **`KEYS`** (brick B6): object keys the JSON side handed over.
+- **`UTF8_BYTES` / `UTF8_CALLS`** (brick B12): the whole UTF-8 validation bill
+  that `from_slice` pays and `from_str` does not.
+- **`CountingWriter`** (brick B5), in the bench crate rather than the library:
+  the serializer already writes through `io::Write`, so wrapping the sink
+  counts every call at exactly the boundary B5 would change -- no library code
+  touched, and therefore no chance of the instrument perturbing what it
+  measures by adding a counter to a hot inner loop.
+
+#### The census
+
+| file | keys | str runs | str bytes | mean run | borrow / copy | utf8 bytes / calls |
+|---|---:|---:|---:|---:|---:|---:|
+| twitter | 13,345 | 19,327 | 366,689 | 19.0 B | 17,787 / 312 | 367,917 / 18,099 |
+| citm_catalog | 25,869 | 26,606 | 221,377 | 8.3 B | 26,603 / 1 | 221,379 / 26,604 |
+| canada | 8 | 12 | 90 | 7.5 B | 12 / 0 | 90 / 12 |
+
+| file | column | esc bytes | esc hits | hit rate | sink calls | bytes/call |
+|---|---|---:|---:|---:|---:|---:|
+| twitter | dom-stringify | 367,917 | 1,228 | **0.334%** | 93,564 | 5.0 |
+| twitter | struct-stringify | 373,965 | 1,228 | 0.328% | 97,128 | 4.9 |
+| citm_catalog | dom-stringify | 221,379 | **2** | **0.0009%** | 189,201 | **2.6** |
+| canada | dom-stringify | 90 | 0 | 0% | 334,397 | 6.2 |
+
+#### What each brick is now worth, and why
+
+**B2 (wide string scan) -- DEMOTED, close to closed.** Three independent counts
+say so. The mean string run is **19.0 bytes** on twitter and **8.3** on
+citm_catalog, so a 16- or 32-byte step has almost nothing to step over.
+**98.3%** of twitter's strings and all but one of citm's already keep the
+zero-copy borrow, so there is no copy to remove. And upstream is *already*
+8-byte SWAR here (Mycroft's algorithm) with `memchr2` -- itself SIMD -- on the
+non-validating path. B2 was written into the plan as though it were competing
+with a byte-at-a-time loop. It is not. Do not open an `unsafe` island for it.
+
+**B3 (escape writer) -- BUILT, and the numbers are below.** The serializer *was*
+byte-at-a-time with a table lookup per byte, and the hit rate is **0.334%** on
+twitter and **0.0009%** on citm_catalog. Practically all of that walking was
+spent proving bytes were ordinary.
+
+**B5 (sink specialisation) -- PROMOTED, against the plan's own gate.** The gate
+read: count the calls per stringify first, and if the count is already near one
+per token, do not build. It is **2.6 bytes per call** on citm_catalog --
+189,201 sink calls for 25,869 keys, about **7.3 calls per key**. The serializer
+is handing the writer a quote, a colon and a comma as separate calls. The
+brick's claim is not "removes an allocation" (M1-A already showed stringify
+allocates zero times) and now not "removes a copy" either -- the emitted-asm
+census says `ser.rs` owns **zero** `mem*` calls. It must win on call count
+alone, and the call count says there is room.
+
+**B6 (key dispatch) -- unchanged, still needs its own probe.** 25,869 keys per
+citm_catalog document and 13,345 per twitter. The count is now known; what is
+still unknown is the comparison count per key, which lives in derive-generated
+code that `--emit asm --lib` does not contain. Priced at M4, not here.
+
+**B12 (UTF-8 validation) -- REFRAMED, and the obvious version is not
+byte-identical.** `from_slice` validates **367,917 bytes in 18,099 separate
+calls** on twitter, a mean of 20 bytes each, and 221,379 bytes in 26,604 calls
+on citm_catalog, a mean of 8.3. The interesting part is not that the bytes are
+many but that the *calls* are: `core`'s validator has a wide ASCII fast path
+that barely gets started on a 20-byte slice. The tempting fix -- validate the
+whole input once at entry, then take the unchecked path per string -- would be
+one long vectorised pass instead of eighteen thousand short ones. **It also
+changes behaviour**: a document with invalid UTF-8 in a region the parser never
+reaches currently succeeds and would then fail. That breaks G1, so B12 stays
+per-string, or becomes an opt-in feature, and the up-front form is recorded
+here as rejected rather than pending.
+
+#### Brick B3: the escape writer, eight bytes per step (KEPT)
+
+The escape table is nonzero for exactly `0x00..=0x1F`, `"` and `\`. So the
+predicate is `b < 0x20 || b == 0x22 || b == 0x5C`, and `b < 0x20` is *exactly*
+`b & 0xE0 == 0` because 0x20 is a single bit. All three fall out of the exact
+zero-byte test with no comparison and no approximation.
+
+The B1s primitives moved into a new `src/swar.rs` so the one subtle function in
+this crate has one definition, one set of tests, and is paid for once. Its
+module docs carry the trap: the famous `(x - ONES) & !x & HIGHS` borrows across
+lane boundaries and reports a byte as zero because its neighbour was.
+
+**No scalar peel here, deliberately, and the contrast with B1s is the point.**
+The whitespace scanner peels four bytes because 46% of twitter's whitespace runs
+are a single byte, so an 8-byte load had to be avoided. Here the scan runs the
+length of a whole string, so the entry cost is amortised over every byte and a
+peel would only add a branch. Same technique, opposite tuning, because the
+measured input shape is opposite. That is what the census is for.
+
+**Engaged, deterministically** (`ESC_STEPS`, one per chunk wide, one per byte
+scalar; identical `ESC_FRAGS` in both arms, so the fragment sequence is
+unchanged):
+
+| cell | scalar steps | wide steps | removed |
+|---|---:|---:|---:|
+| twitter dom-stringify | 367,917 | 101,382 | **-72.4%** |
+| citm_catalog dom-stringify | 221,379 | 108,825 | **-50.8%** |
+
+**Clock.** Same binary, one environment variable between the arms
+(`RJT_ESC_WIDE=0/1`), 61 pairs, ABBA, pinned cpu2/High, on a **loaded** box --
+so both the median of paired ratios and the best-of-N per-arm minimum are
+given, and only cells where the two agree are claimed. **The controls are parse
+cells**, which this change cannot reach; stringify cells were the controls for
+every parse brick so far, and the roles simply swap.
+Raw: `corpus/runs/2026-09-09-b3-escape-wide.txt` (+ `.csv`).
+
+| file | column | scalar | wide | median | wins, z | best-of-N |
+|---|---|---:|---:|---:|---:|---:|
+| twitter | struct-stringify | 1,774 MB/s | **2,153 MB/s** | **1.208x** | 61/61, z = -7.81 | **1.207x** |
+| twitter | dom-stringify | 1,837 MB/s | **2,202 MB/s** | **1.200x** | 60/61, z = -7.55 | **1.189x** |
+| citm_catalog | struct-stringify | 1,870 MB/s | **2,007 MB/s** | **1.068x** | 61/61, z = -7.81 | **1.072x** |
+| citm_catalog | dom-stringify | 1,261 MB/s | **1,306 MB/s** | **1.028x** | 57/81, z = -3.67 | **1.032x** |
+| twitter | dom-parse (control) | 331 MB/s | 331 MB/s | 0.995x | 27/61 | 1.007x |
+| citm_catalog | struct-parse (control) | 1,276 MB/s | 1,276 MB/s | 1.002x | 34/61 | 1.000x |
+
+`citm_catalog` dom-stringify needed a **second probe** to be claimable at all.
+On the 61-pair run its two statistics disagreed in sign -- median 1.028x against
+best-of-N 0.980x -- and a cell whose statistics disagree is not a result. An
+81-pair run on that cell alone brought them into agreement (1.028x and 1.032x),
+and it is quoted from that run. Recorded because the rule earned its keep: when
+the median and the best-of-N disagree, run more pairs; do not pick the one you
+prefer.
+
+The gradient is the census again. twitter is 57.1% string and gains 1.20x;
+citm_catalog is 12.5% string and gains 1.03-1.07x; `canada` has 90 string bytes
+in 2.25 MB and is not quoted because there is nothing there to win.
+
+**The gate that earns the `unsafe` in this function.** `format_escaped_str_contents`
+calls `str::from_utf8_unchecked` on the clean runs and
+`hint::unreachable_unchecked` on a byte the table does not flag. So a mask that
+flagged one byte too few would corrupt output, and one that flagged one byte too
+many would be undefined behaviour. Four tests stand behind it:
+`escape_mask_agrees_with_table` (all 256 byte values in all 8 lanes, mask
+against table, exact equality), `wide_scan_matches_scalar` (>100,000 cases:
+every byte value at every offset in every length 0-40, all-clean and all-escape
+runs across the step boundary, and seeded random content over the interesting
+alphabet), `non_ascii_is_never_flagged` (0x80-0xFF must never be flagged, or a
+multi-byte sequence would be split), and
+`the_gate_would_catch_an_off_by_one_range`, which poisons the mask with `0xC0`
+instead of `0xE0` and asserts the gate notices. A suite that cannot fail is not
+a gate.
+
+#### The emitted-asm census (`docs/ASM-CENSUS.md`, `tools/asm-census.ps1`)
+
+Whole-crate, per-source-file attribution via CodeView `.cv_loc` plus
+`.cv_inline_site_id`, with the full inline-frame chain rebuilt so a bounds check
+whose innermost frame is `core/src/slice/index.rs` counts against the file that
+inlined it. `de.rs` + `ser.rs` + `read.rs` own 9,136 of 18,246 instructions.
+
+- **Panic / bounds sites: 63.** `read.rs` 23, `ser.rs` 2, **`de.rs` 0**. That
+  zero closes `get_unchecked` in `de.rs`: the plan said not to reach for it
+  until the census found a real one, and it did not. It also **opens a safe
+  brick**: three `read.rs` sites share one shape, `if self.index == self.slice.len()`
+  followed by `self.slice[self.index]`. `==` does not tell LLVM `index < len`,
+  so the bound is re-checked. A `<`-form check or `get()` folds it with no
+  `unsafe`. 63 static sites in cold blocks can still be 0.0% of runtime, so
+  this is an opened question, not a measured tax.
+- **`mem*` calls: 46** -- 36 `memcpy`, 10 `memmove`, **0 `memset`**, every one a
+  runtime length. `ser.rs` owns **zero**, which reprices B5 and B15 down
+  independently of M1-A: there is no copy on the serialize path to remove.
+  `read.rs`'s six are `extend_from_slice` on the scratch path, i.e. escaped
+  strings only -- the borrowed fast path emits no copy at all, which is the
+  `STR_BORROWS` counter confirmed from the other side.
+- **Auto-vectorisation: none.** Seven packed instructions in the whole crate and
+  neither kind is vector work (five are LLVM's u64-to-f64 idiom in number
+  parsing, two are register moves). So B1v, B2, B3 and B12 compete with scalar
+  code and none of their claims is pre-empted by the compiler. Baseline ISA is
+  plain `x86-64`, so this is expected rather than surprising, and the landed
+  8-byte SWAR scans correctly do not appear -- a control proving the census sees
+  what it should.
+- **Stated coverage gap:** `--emit asm --lib` contains only this crate's own
+  instantiations, so the whole derive-generated struct-parse path is absent and
+  the census prices **B6, B6h and B14 not at all**. Counts are also pre-LTO.
+
+Three instrument bugs were found and fixed while building it, each of which had
+already produced plausible-looking wrong numbers -- a panic-symbol regex that
+silently missed 37 of the 63 sites, a PowerShell one-element array unrolling to
+a bare string and mis-bucketing 4,373 instructions, and `Split-Path -Leaf`
+rendering every `core` file as `mod.rs`. The tool now also holds the SHA-256
+the compiler stamps into each `.cv_file` directive against the working tree, so
+a stale report says `CHANGED since the build` instead of lying quietly.

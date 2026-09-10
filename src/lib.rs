@@ -437,6 +437,7 @@ mod iter;
 mod lexical;
 mod number;
 mod read;
+mod swar;
 
 #[cfg(feature = "raw_value")]
 mod raw;

@@ -34,6 +34,36 @@ pub static WS_BYTES: AtomicU64 = AtomicU64::new(0);
 pub static D8_CALLS: AtomicU64 = AtomicU64::new(0);
 /// Calls to `Read::take_8_digits` that consumed eight digits.
 pub static D8_HITS: AtomicU64 = AtomicU64::new(0);
+/// Calls to `SliceRead::skip_to_escape` -- string runs considered (brick B2).
+pub static STR_SCANS: AtomicU64 = AtomicU64::new(0);
+/// String content bytes advanced over by the escape scanner (brick B2).
+pub static STR_BYTES: AtomicU64 = AtomicU64::new(0);
+/// Strings that had to be copied into scratch because they held an escape, so
+/// the zero-copy borrow was lost (brick B2: this is the cost worth removing).
+pub static STR_COPIES: AtomicU64 = AtomicU64::new(0);
+/// Strings returned as a borrow of the input, the fast path (brick B2).
+pub static STR_BORROWS: AtomicU64 = AtomicU64::new(0);
+/// String content bytes examined by the serializer's escape loop (brick B3).
+pub static ESC_BYTES: AtomicU64 = AtomicU64::new(0);
+/// Bytes that actually needed a JSON escape (brick B3). The ratio of this to
+/// `ESC_BYTES` is what a per-chunk mask would be skipping over.
+pub static ESC_HITS: AtomicU64 = AtomicU64::new(0);
+/// `write_string_fragment` calls: clean runs handed to the writer (brick B3).
+pub static ESC_FRAGS: AtomicU64 = AtomicU64::new(0);
+/// Steps taken by the escape scanner: one per 8-byte chunk on the wide path,
+/// one per byte on the scalar path (brick B3). This is the counter that says
+/// whether the wide path is ENGAGED -- a byte-identical output gate cannot,
+/// because a fast path that silently stopped being taken still produces the
+/// right answer. Expect roughly `esc_bytes / 8` wide and `esc_bytes` scalar.
+pub static ESC_STEPS: AtomicU64 = AtomicU64::new(0);
+/// Object keys parsed (brick B6). One per key, whatever the visitor does next.
+pub static KEYS: AtomicU64 = AtomicU64::new(0);
+/// Bytes handed to `str::from_utf8` for validation (brick B12). `from_str`
+/// pays none of this because its input is already known to be UTF-8, so the
+/// gap between `from_slice` and `from_str` on the same bytes is B12's ceiling.
+pub static UTF8_BYTES: AtomicU64 = AtomicU64::new(0);
+/// Calls to that validation (brick B12).
+pub static UTF8_CALLS: AtomicU64 = AtomicU64::new(0);
 
 /// A reading of every counter.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -53,6 +83,28 @@ pub struct Counters {
     pub d8_calls: u64,
     /// Calls to `take_8_digits` that consumed eight digits.
     pub d8_hits: u64,
+    /// String runs considered by the escape scanner.
+    pub str_scans: u64,
+    /// String content bytes advanced over by the escape scanner.
+    pub str_bytes: u64,
+    /// Strings copied into scratch because they held an escape.
+    pub str_copies: u64,
+    /// Strings returned as a borrow of the input.
+    pub str_borrows: u64,
+    /// String content bytes examined by the serializer's escape loop.
+    pub esc_bytes: u64,
+    /// Bytes that needed a JSON escape.
+    pub esc_hits: u64,
+    /// Clean runs handed to the writer.
+    pub esc_frags: u64,
+    /// Steps taken by the escape scanner (per chunk wide, per byte scalar).
+    pub esc_steps: u64,
+    /// Object keys parsed.
+    pub keys: u64,
+    /// Bytes handed to `str::from_utf8` for validation.
+    pub utf8_bytes: u64,
+    /// Calls to that validation.
+    pub utf8_calls: u64,
 }
 
 /// Read every counter.
@@ -66,13 +118,41 @@ pub fn snapshot() -> Counters {
         ws_bytes: WS_BYTES.load(Ordering::Relaxed),
         d8_calls: D8_CALLS.load(Ordering::Relaxed),
         d8_hits: D8_HITS.load(Ordering::Relaxed),
+        str_scans: STR_SCANS.load(Ordering::Relaxed),
+        str_bytes: STR_BYTES.load(Ordering::Relaxed),
+        str_copies: STR_COPIES.load(Ordering::Relaxed),
+        str_borrows: STR_BORROWS.load(Ordering::Relaxed),
+        esc_bytes: ESC_BYTES.load(Ordering::Relaxed),
+        esc_hits: ESC_HITS.load(Ordering::Relaxed),
+        esc_frags: ESC_FRAGS.load(Ordering::Relaxed),
+        esc_steps: ESC_STEPS.load(Ordering::Relaxed),
+        keys: KEYS.load(Ordering::Relaxed),
+        utf8_bytes: UTF8_BYTES.load(Ordering::Relaxed),
+        utf8_calls: UTF8_CALLS.load(Ordering::Relaxed),
     }
 }
 
 /// Zero every counter.
 pub fn reset() {
     for c in [
-        &PEEK, &NEXT, &DISCARD, &WS_RUNS, &WS_BYTES, &D8_CALLS, &D8_HITS,
+        &PEEK,
+        &NEXT,
+        &DISCARD,
+        &WS_RUNS,
+        &WS_BYTES,
+        &D8_CALLS,
+        &D8_HITS,
+        &STR_SCANS,
+        &STR_BYTES,
+        &STR_COPIES,
+        &STR_BORROWS,
+        &ESC_BYTES,
+        &ESC_HITS,
+        &ESC_FRAGS,
+        &ESC_STEPS,
+        &KEYS,
+        &UTF8_BYTES,
+        &UTF8_CALLS,
     ] {
         c.store(0, Ordering::Relaxed);
     }
@@ -90,6 +170,17 @@ impl Counters {
             ws_bytes: self.ws_bytes - earlier.ws_bytes,
             d8_calls: self.d8_calls - earlier.d8_calls,
             d8_hits: self.d8_hits - earlier.d8_hits,
+            str_scans: self.str_scans - earlier.str_scans,
+            str_bytes: self.str_bytes - earlier.str_bytes,
+            str_copies: self.str_copies - earlier.str_copies,
+            str_borrows: self.str_borrows - earlier.str_borrows,
+            esc_bytes: self.esc_bytes - earlier.esc_bytes,
+            esc_hits: self.esc_hits - earlier.esc_hits,
+            esc_frags: self.esc_frags - earlier.esc_frags,
+            esc_steps: self.esc_steps - earlier.esc_steps,
+            keys: self.keys - earlier.keys,
+            utf8_bytes: self.utf8_bytes - earlier.utf8_bytes,
+            utf8_calls: self.utf8_calls - earlier.utf8_calls,
         }
     }
 }

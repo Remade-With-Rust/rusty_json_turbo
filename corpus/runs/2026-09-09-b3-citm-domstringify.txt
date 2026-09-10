@@ -1,0 +1,19 @@
+﻿pinvs: esc_scalar=F:\coding\rusty_json_turbo\target\b-knobs\release\rjson-bench.exe (52AD427DD2EA775F)
+pinvs: esc_wide=F:\coding\rusty_json_turbo\target\b-knobs\release\rjson-bench.exe (52AD427DD2EA775F)
+pinvs: NULL ARM -- identical binaries, this is the floor
+pinvs: cpu=2 priority=High pairs=81 bench='solo --cell citm_catalog,dom-stringify --cell citm_catalog,struct-parse --arm ours'
+
+| file | column | esc_scalar | esc_wide | esc_scalar/esc_wide time (median [min, max]) | wins, z |
+|---|---|---:|---:|---:|---:|
+| citm_catalog | dom-stringify | esc_scalar **1,261 MB/s** | esc_wide 1,306 MB/s | **1.028x** [0.441, 1.203] | 24/81, z = -3.67 |
+| citm_catalog | struct-parse | esc_scalar **1,277 MB/s** | esc_wide 1,274 MB/s | **0.993x** [0.909, 1.048] | 48/81, z = +1.67 |
+
+| file | column | esc_scalar best-of-N | esc_wide best-of-N | esc_scalar/esc_wide best-of-N |
+|---|---|---:|---:|---:|
+| citm_catalog | dom-stringify | 1,428 MB/s | 1,474 MB/s | **1.032x** |
+| citm_catalog | struct-parse | 1,351 MB/s | 1,322 MB/s | **0.979x** |
+pinvs: wrote corpus\runs\2026-09-09-b3-citm-domstringify.csv
+
+method: PROCESS-level paired A/B between two binaries (a global allocator is one per program, so it cannot be an in-process arm); each binary reports its own per-cell time via json-bench solo so process launch is outside the number; leading binary alternated per pair (ABBA); pairs=81; statistic=min per-iteration time in each arm-sample window; verdict=median of paired ratios + paired wins with z, plus a best-of-N per-arm minimum that noise can only inflate; pinned=cpu2/High, affinity read back per run; work parity: output/input bytes asserted equal per cell per pair; machine=Intel64 Family 6 Model 183 Stepping 1, GenuineIntel
+A: BINARY|system|false|uncommitted|windows|x86_64
+B: BINARY|system|false|uncommitted|windows|x86_64

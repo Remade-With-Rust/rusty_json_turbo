@@ -2076,6 +2076,78 @@ where
     formatter.end_string(writer)
 }
 
+/// Index of the first byte at or after `from` that needs a JSON escape.
+///
+/// The SCALAR ORACLE. Byte at a time, straight off the table upstream already
+/// uses, so it is true by construction. It stays in the tree permanently: the
+/// wide version below is tested against it, and `RJT_ESC_WIDE=0` runs it in
+/// production so the two can be A/B'd inside one binary rather than across two
+/// builds, where code layout alone has measured plus or minus 13% here.
+#[inline]
+fn scan_to_escape_scalar(bytes: &[u8], from: usize) -> usize {
+    let mut i = from;
+    while i < bytes.len() {
+        crate::counters::add(&crate::counters::ESC_STEPS, 1);
+        if ESCAPE[bytes[i] as usize] != 0 {
+            return i;
+        }
+        i += 1;
+    }
+    bytes.len()
+}
+
+/// High bit set in each lane that needs a JSON escape.
+///
+/// The escape table is nonzero for exactly three things: `0x00..=0x1F`,
+/// `0x22` (a quote) and `0x5C` (a backslash). So the predicate is `b < 0x20 || b == 0x22 || b == 0x5C`, and
+/// `b < 0x20` is exactly `b & 0xE0 == 0` because 0x20 is a single bit. All
+/// three fall out of the exact zero-byte test, with no comparison and no
+/// approximation. `escape_mask_agrees_with_table` asserts the equivalence over
+/// all 256 byte values, so this is checked rather than argued.
+#[inline(always)]
+fn escape_bytes(x: u64) -> u64 {
+    crate::swar::masked_zero_bytes(x, 0xE0)
+        | crate::swar::eq_bytes(x, b'"')
+        | crate::swar::eq_bytes(x, 0x5C)
+}
+
+/// Is the wide escape scan on? `knobs` builds only.
+#[cfg(feature = "knobs")]
+fn esc_wide() -> bool {
+    static V: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *V.get_or_init(|| std::env::var("RJT_ESC_WIDE").map_or(true, |v| v != "0"))
+}
+
+/// [`scan_to_escape_scalar`], eight bytes per step.
+///
+/// No scalar peel here, deliberately, and the contrast with the whitespace
+/// scanner is the reason. There, most runs were a single byte, so an 8-byte
+/// load had to be avoided for short runs and `WS_PEEL = 4` exists to do it.
+/// Here the scan runs the LENGTH OF A WHOLE STRING -- the escape hit rate on
+/// the corpus is 0.33% and 0.0009% -- so the entry cost is amortised over
+/// every byte of the string and a peel would only add a branch. Same
+/// technique, opposite tuning, because the measured input shape is opposite.
+#[inline]
+fn scan_to_escape(bytes: &[u8], from: usize) -> usize {
+    #[cfg(feature = "knobs")]
+    if !esc_wide() {
+        return scan_to_escape_scalar(bytes, from);
+    }
+    let mut i = from;
+    while let Some(window) = bytes.get(i..i + 8) {
+        let Ok(eight) = <[u8; 8]>::try_from(window) else {
+            break;
+        };
+        crate::counters::add(&crate::counters::ESC_STEPS, 1);
+        let mask = escape_bytes(u64::from_le_bytes(eight));
+        if mask != 0 {
+            return i + (mask.trailing_zeros() >> 3) as usize;
+        }
+        i += 8;
+    }
+    scan_to_escape_scalar(bytes, i)
+}
+
 fn format_escaped_str_contents<W, F>(
     writer: &mut W,
     formatter: &mut F,
@@ -2085,26 +2157,37 @@ where
     W: ?Sized + io::Write,
     F: ?Sized + Formatter,
 {
-    let mut bytes = value.as_bytes();
+    let bytes = value.as_bytes();
 
-    let mut i = 0;
-    while i < bytes.len() {
-        let (string_run, rest) = bytes.split_at(i);
-        let (&byte, rest) = rest.split_first().unwrap();
+    // PROBE (brick B3): the scan below examines every byte exactly once, so
+    // this whole-string add is exact and costs one increment per string
+    // instead of one per byte.
+    crate::counters::add(&crate::counters::ESC_BYTES, bytes.len() as u64);
 
-        let escape = ESCAPE[byte as usize];
-
-        i += 1;
-        if escape == 0 {
-            continue;
+    // `start` is the first byte not yet handed to the writer. Upstream walked
+    // one byte at a time and re-based a subslice on every escape; this asks
+    // the scanner for the next escape and writes the clean run between, which
+    // is the same sequence of `write_string_fragment` / `write_char_escape`
+    // calls in the same order with the same contents -- the escape hit rate on
+    // the corpus is under half a percent, so almost all of that walking was
+    // spent proving bytes were ordinary.
+    let mut start = 0;
+    loop {
+        let at = scan_to_escape(bytes, start);
+        if at >= bytes.len() {
+            break;
         }
+        let byte = bytes[at];
+        let escape = ESCAPE[byte as usize];
+        crate::counters::add(&crate::counters::ESC_HITS, 1);
 
-        bytes = rest;
-        i = 0;
-
-        // Safety: string_run is a valid utf8 string, since we only split on ascii sequences
-        let string_run = unsafe { str::from_utf8_unchecked(string_run) };
-        if !string_run.is_empty() {
+        if at > start {
+            // Safety: `start` and `at` are both either 0, the length, or the
+            // index of a byte the escape table flags -- and every flagged byte
+            // is ASCII (0x00..=0x1F, `"`, `\`). So this slice never splits a
+            // multi-byte UTF-8 sequence, and `value` was a `&str`.
+            let string_run = unsafe { str::from_utf8_unchecked(&bytes[start..at]) };
+            crate::counters::add(&crate::counters::ESC_FRAGS, 1);
             tri!(formatter.write_string_fragment(writer, string_run));
         }
 
@@ -2121,14 +2204,17 @@ where
             _ => unsafe { hint::unreachable_unchecked() },
         };
         tri!(formatter.write_char_escape(writer, char_escape));
+
+        start = at + 1;
     }
 
-    // Safety: bytes is a valid utf8 string, since we only split on ascii sequences
-    let string_run = unsafe { str::from_utf8_unchecked(bytes) };
-    if string_run.is_empty() {
+    if start >= bytes.len() {
         return Ok(());
     }
 
+    // Safety: as above -- `start` is 0 or just past an ASCII escape byte.
+    let string_run = unsafe { str::from_utf8_unchecked(&bytes[start..]) };
+    crate::counters::add(&crate::counters::ESC_FRAGS, 1);
     formatter.write_string_fragment(writer, string_run)
 }
 
@@ -2282,4 +2368,144 @@ where
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod escape_tests {
+    use super::{escape_bytes, scan_to_escape, scan_to_escape_scalar, ESCAPE};
+    use alloc::vec;
+    use alloc::vec::Vec;
+
+    /// THE GATE. The wide mask must flag exactly the bytes the escape table
+    /// flags -- not a superset, not a subset -- for all 256 byte values, in
+    /// every one of the eight lanes. If this ever fails, the scanner would
+    /// either skip a byte that needs escaping (corrupt output) or stop on one
+    /// that does not (and then hit `unreachable_unchecked`, which is undefined
+    /// behaviour, not a panic). So this is the test that earns the `unsafe`
+    /// blocks in `format_escaped_str_contents`.
+    #[test]
+    fn escape_mask_agrees_with_table() {
+        for b in 0..=255u8 {
+            for lane in 0..8 {
+                let word = (b as u64) << (lane * 8);
+                // Fill the other lanes with a byte that needs no escape, so
+                // only this lane can set a bit.
+                let filler = 0x41u64; // 'A'
+                let mut w = 0u64;
+                for l in 0..8 {
+                    if l != lane {
+                        w |= filler << (l * 8);
+                    }
+                }
+                let w = w | word;
+                let mask = escape_bytes(w);
+                let flagged = mask & (0x80 << (lane * 8)) != 0;
+                assert_eq!(
+                    flagged,
+                    ESCAPE[b as usize] != 0,
+                    "byte {b:#04x} in lane {lane}: mask said {flagged}, table says {}",
+                    ESCAPE[b as usize] != 0
+                );
+            }
+        }
+    }
+
+    /// The wide scan must return the same index as the scalar oracle for every
+    /// starting offset in every buffer, including the empty buffer and buffers
+    /// shorter than one 8-byte step.
+    #[test]
+    fn wide_scan_matches_scalar() {
+        let mut buffers: Vec<Vec<u8>> = Vec::new();
+
+        // Every byte value, alone and at every offset inside a clean run, so a
+        // lane-indexing error cannot hide.
+        for b in 0..=255u8 {
+            for len in 0..40usize {
+                for pos in 0..len {
+                    let mut v = vec![b'A'; len];
+                    v[pos] = b;
+                    buffers.push(v);
+                }
+            }
+            buffers.push(vec![b]);
+        }
+
+        // All-clean and all-escape runs of every length across the step
+        // boundary, which is where an off-by-one in the tail lands.
+        for len in 0..40usize {
+            buffers.push(vec![b'A'; len]);
+            buffers.push(vec![b'"'; len]);
+            buffers.push(vec![0x00; len]);
+            buffers.push(vec![0x1F; len]);
+            buffers.push(vec![0x20; len]);
+        }
+        buffers.push(Vec::new());
+
+        // Deterministic random content over the interesting alphabet.
+        let mut s = 0x9E37_79B9_7F4A_7C15u64;
+        let alphabet = [b'A', b'"', 0x5C, 0x00, 0x1F, 0x20, 0x7F, 0x80, 0xFF];
+        for len in [1usize, 7, 8, 9, 15, 16, 17, 31, 64, 129] {
+            for _ in 0..200 {
+                let mut v = Vec::with_capacity(len);
+                for _ in 0..len {
+                    s ^= s << 13;
+                    s ^= s >> 7;
+                    s ^= s << 17;
+                    v.push(alphabet[(s % alphabet.len() as u64) as usize]);
+                }
+                buffers.push(v);
+            }
+        }
+
+        let mut checked = 0u64;
+        for buf in &buffers {
+            for from in 0..=buf.len() {
+                assert_eq!(
+                    scan_to_escape(buf, from),
+                    scan_to_escape_scalar(buf, from),
+                    "disagreed on {buf:?} from {from}"
+                );
+                checked += 1;
+            }
+        }
+        assert!(checked > 100_000, "only {checked} cases -- spread too thin");
+    }
+
+    /// A byte at or above 0x80 is a UTF-8 continuation or leader and must NEVER
+    /// be flagged: flagging one would split a multi-byte sequence and the
+    /// `from_utf8_unchecked` in the writer would build an invalid `str`.
+    #[test]
+    fn non_ascii_is_never_flagged() {
+        for b in 0x80..=0xFFu8 {
+            assert_eq!(ESCAPE[b as usize], 0, "table flags non-ASCII {b:#04x}");
+            let word = u64::from_le_bytes([b; 8]);
+            assert_eq!(escape_bytes(word), 0, "mask flags non-ASCII {b:#04x}");
+        }
+    }
+
+    /// Poison the mask and prove the gate above notices. A test suite that
+    /// cannot fail is not a gate; this asserts the discriminating power of
+    /// `escape_mask_agrees_with_table` directly, using the most plausible bug
+    /// -- a range test that catches 0x20 (a space) as well as the controls.
+    #[test]
+    fn the_gate_would_catch_an_off_by_one_range() {
+        fn poisoned(x: u64) -> u64 {
+            // 0xC0 instead of 0xE0: this flags everything below 0x40, so
+            // spaces, digits and punctuation all get escaped.
+            crate::swar::masked_zero_bytes(x, 0xC0)
+                | crate::swar::eq_bytes(x, b'"')
+                | crate::swar::eq_bytes(x, 0x5C)
+        }
+        let mut disagreements = 0;
+        for b in 0..=255u8 {
+            let word = u64::from_le_bytes([b; 8]);
+            if (poisoned(word) != 0) != (ESCAPE[b as usize] != 0) {
+                disagreements += 1;
+            }
+        }
+        assert!(
+            disagreements > 0,
+            "a deliberately wrong mask agreed with the table everywhere --              the gate has stopped discriminating"
+        );
+    }
 }
