@@ -21,7 +21,18 @@ path = "src/main.rs"
 # Ours, under the name `turbo` so the two arms read unambiguously in code.
 turbo = { package = "rusty_json_turbo", path = "../.." }
 # The oracle: upstream serde_json at the exact version this fork tracks.
-serde_json_upstream = { workspace = true }
+#
+# `raw_value` is enabled HERE, on UPSTREAM only, and deliberately not on
+# `turbo`. The per-message latency cell needs to slice a container document
+# into its individual records with their original bytes intact -- whitespace
+# and key order included, since one of the S4 payloads is 54.9% whitespace and
+# re-serializing would silently measure a different document. `RawValue` is the
+# right tool for that, but switching it on for `turbo` would compile extra
+# `cfg`-gated paths into the crate under measurement and move every timing in
+# the suite. Cargo features are additive, so that could not be undone from a
+# consumer's manifest either. Slicing with the oracle's copy costs the measured
+# arm nothing.
+serde_json_upstream = { workspace = true, features = ["raw_value"] }
 # The house allocator, through the seam, for the `rusty-alloc` build arm. Only
 # this binary installs it; the library never does.
 alloc_seam = { package = "rusty_json_turbo-alloc", path = "../rusty_json_turbo-alloc", optional = true }

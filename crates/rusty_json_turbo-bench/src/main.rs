@@ -21,7 +21,7 @@
 
 use std::path::Path;
 use std::process::ExitCode;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use rjt_bench::alloc_arm;
 use rjt_bench::cells::{self, Arm, Column};
@@ -45,7 +45,9 @@ static ALLOC: alloc_arm::Backend = alloc_arm::BACKEND;
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let Some(verb) = args.first().map(String::as_str) else {
-        eprintln!("usage: rjson-bench <bench|null|solo|census|diff-oracle|list> ...");
+        eprintln!(
+            "usage: rjson-bench \n             <bench|null|solo|census|probe|work|latency|diff-oracle|list> ..."
+        );
         return ExitCode::from(2);
     };
     match verb {
@@ -55,11 +57,17 @@ fn main() -> ExitCode {
         "census" => census(&args[1..]),
         "probe" => probe(&args[1..]),
         "work" => work(&args[1..]),
+        "latency" => latency(&args[1..]),
         "diff-oracle" => diff_oracle(&args[1..]),
         "list" => {
-            for f in File::ALL {
+            for f in File::EVERY {
                 for c in Column::ALL {
-                    println!("{},{}", f.name(), c.name());
+                    println!("{},{}	{}", f.name(), c.name(), f.scenario().name());
+                }
+            }
+            for f in File::EVERY {
+                if let Some(path) = f.message_array() {
+                    println!("messages {} at {}", f.name(), path);
                 }
             }
             for a in Arm::ALL {
@@ -358,6 +366,215 @@ fn census(args: &[String]) -> ExitCode {
 /// path that quietly stopped being reached still produces the right answer.
 ///
 /// Run it twice, `RJT_WS_FASTPATH=1` and `=0`, and diff.
+/// Per-message latency, for the S4 container payloads.
+///
+/// Throughput and latency are different questions and can move in opposite
+/// directions. "How fast can we chew 600 KB" is answered by `bench`; "how long
+/// to handle ONE message" is answered here, and it is the question a service
+/// with a p99 target actually asks. Per-call setup that vanishes into a
+/// 600 KB average dominates a 230-byte message.
+///
+/// S4 ships containers because that is how the payloads arrive, so the records
+/// are sliced out first (see `corpus::messages`, which uses the ORACLE's
+/// `RawValue` so the original bytes survive) and then parsed one at a time,
+/// cycling until `--messages` parses have happened.
+///
+/// THE TIMER IS THE INSTRUMENT HERE, so its own cost is measured and reported
+/// rather than assumed away: a single `Instant::now()` pair costs tens of
+/// nanoseconds, which is negligible against a 600 KB parse and is NOT
+/// negligible against a small message. The overhead row below is measured in
+/// the same loop shape with the parse removed, so a reader can subtract it.
+fn latency(args: &[String]) -> ExitCode {
+    let mut files: Vec<File> = Vec::new();
+    let mut count = 10_000usize;
+    let mut column = Column::DomParse;
+    let mut i = 0;
+    while i < args.len() {
+        let a = args[i].as_str();
+        let mut next = || -> Result<&str, String> {
+            i += 1;
+            args.get(i)
+                .map(String::as_str)
+                .ok_or_else(|| format!("{a} needs a value"))
+        };
+        let r = match a {
+            "--all" => {
+                files.extend(
+                    File::S4
+                        .iter()
+                        .copied()
+                        .filter(|f| f.message_array().is_some()),
+                );
+                Ok(())
+            }
+            "--file" => next().map(|v| match File::parse(v) {
+                Some(f) => files.push(f),
+                None => {
+                    eprintln!("error: unknown file {v:?}");
+                    std::process::exit(2);
+                }
+            }),
+            "--messages" => next().and_then(|v| {
+                v.parse()
+                    .map(|n| count = n)
+                    .map_err(|e| format!("--messages: {e}"))
+            }),
+            "--column" => next().and_then(|v| match Column::parse(v) {
+                Some(c) => {
+                    column = c;
+                    Ok(())
+                }
+                None => Err(format!("--column: unknown column {v:?}")),
+            }),
+            other => Err(format!("unknown option {other:?}")),
+        };
+        if let Err(e) = r {
+            eprintln!("error: {e}");
+            return ExitCode::from(2);
+        }
+        i += 1;
+    }
+    if files.is_empty() {
+        files.extend(
+            File::S4
+                .iter()
+                .copied()
+                .filter(|f| f.message_array().is_some()),
+        );
+    }
+    // Per-message latency on a struct needs a fixture for the ELEMENT type,
+    // not the document type, and those do not exist yet. Refusing is better
+    // than silently measuring the container.
+    if !matches!(column, Column::DomParse | Column::Scan) {
+        eprintln!(
+            "error: --column {} needs a fixture for the element type, not the              document type; only dom-parse and scan are wired",
+            column.name()
+        );
+        return ExitCode::from(2);
+    }
+
+    // The timer's own cost AND its granularity, in the same loop shape with
+    // the parse removed. Both matter, and reporting only the first is how a
+    // latency table quietly lies: on Windows `Instant` is backed by
+    // QueryPerformanceCounter, whose tick is coarser than the cost of reading
+    // it, so the measured overhead comes out as a flat 0 ns while every
+    // reported figure is actually quantised to the tick. A p50 of 1,600 ns
+    // against a 100 ns tick carries about 6% granularity error, and a reader
+    // cannot know that from an overhead row alone.
+    let mut overhead = Vec::with_capacity(4096);
+    for _ in 0..4096 {
+        let t = Instant::now();
+        std::hint::black_box(());
+        overhead.push(t.elapsed().as_nanos() as u64);
+    }
+    overhead.sort_unstable();
+    let timer_ns = overhead[overhead.len() / 2];
+    // Smallest non-zero gap the clock will admit to: its effective resolution.
+    let mut tick_ns = u64::MAX;
+    for _ in 0..4096 {
+        let t = Instant::now();
+        loop {
+            let d = t.elapsed().as_nanos() as u64;
+            if d > 0 {
+                tick_ns = tick_ns.min(d);
+                break;
+            }
+        }
+    }
+
+    println!(
+        "per-message latency | column {} | {} parses per file",
+        column.name(),
+        count
+    );
+    println!(
+        "timer: overhead {timer_ns} ns (median of the same loop with the parse removed),          resolution {tick_ns} ns (smallest non-zero interval it will report)"
+    );
+    if timer_ns == 0 {
+        println!(
+            "  NOTE: a 0 ns overhead means the read costs less than one tick, NOT that it is              free. Every figure below is quantised to {tick_ns} ns, so treat a p50 within a              few ticks of that as granularity rather than signal."
+        );
+    }
+    println!(
+        "  max is reported but is SCHEDULER noise on a shared machine, not the parser; p99 is          the number to operate on."
+    );
+    println!(
+        "{:<20} {:>8} {:>9} {:>8} {:>8} {:>8} {:>8} {:>9}",
+        "file", "msgs", "mean B", "p50 ns", "p90 ns", "p99 ns", "max ns", "MB/s"
+    );
+
+    for file in files {
+        let messages = corpus::messages(file);
+        if messages.is_empty() {
+            eprintln!("{}: no message array, skipped", file.name());
+            continue;
+        }
+        let total_bytes: usize = messages.iter().map(Vec::len).sum();
+        let mean_bytes = total_bytes / messages.len();
+
+        let mut ns: Vec<u64> = Vec::with_capacity(count);
+        for k in 0..count {
+            let msg = &messages[k % messages.len()];
+            let t = Instant::now();
+            match column {
+                Column::Scan => {
+                    let v = turbo::from_slice::<serde::de::IgnoredAny>(msg).unwrap();
+                    std::hint::black_box(&v);
+                }
+                _ => {
+                    let v = turbo::from_slice::<turbo::Value>(msg).unwrap();
+                    std::hint::black_box(&v);
+                }
+            }
+            ns.push(t.elapsed().as_nanos() as u64);
+        }
+        ns.sort_unstable();
+        let pick = |q: f64| ns[((ns.len() as f64 - 1.0) * q) as usize];
+        let p50 = pick(0.50);
+        // Throughput implied by the median message, for comparison with the
+        // whole-document MB/s figures elsewhere. Stated from p50 rather than
+        // the mean because the mean of a latency distribution is not the
+        // number anyone operates on.
+        let mbps = if p50 > timer_ns {
+            mean_bytes as f64 / (p50 - timer_ns) as f64 * 1e3
+        } else {
+            f64::NAN
+        };
+        println!(
+            "{:<20} {:>8} {:>9} {:>8} {:>8} {:>8} {:>8} {:>9.0}",
+            file.name(),
+            messages.len(),
+            mean_bytes,
+            p50,
+            pick(0.90),
+            pick(0.99),
+            ns[ns.len() - 1],
+            mbps
+        );
+    }
+    ExitCode::SUCCESS
+}
+
+/// Parse into the fixture type and drop it, with the counters running.
+///
+/// Generic so `by_fixture!` -- the single file-to-type list in `cells` -- can
+/// drive it, rather than this verb keeping a second copy of that list that
+/// could drift out of step with the first.
+fn count_struct_parse<T: cells::Fixture>(input: &[u8]) {
+    drop(turbo::from_slice::<T>(input).unwrap());
+}
+
+/// Parse OUTSIDE the counted region, reset, then serialize into the counting
+/// sink, so the numbers describe serialize work only.
+fn count_struct_stringify<T: cells::Fixture>(
+    input: &[u8],
+    sink: &mut rjt_bench::wcount::CountingWriter,
+) {
+    let value: T = turbo::from_slice(input).unwrap();
+    turbo::counters::reset();
+    turbo::to_writer(sink, &value).unwrap();
+}
+
 fn work(args: &[String]) -> ExitCode {
     let opts = match parse_opts(args, None) {
         Ok(o) => o,
@@ -414,19 +631,9 @@ fn work(args: &[String]) -> ExitCode {
             Column::Scan => {
                 turbo::from_slice::<serde::de::IgnoredAny>(&input).unwrap();
             }
-            Column::StructParse => match file {
-                File::Twitter => {
-                    drop(turbo::from_slice::<rjt_bench::twitter::Twitter>(&input).unwrap());
-                }
-                File::CitmCatalog => {
-                    drop(
-                        turbo::from_slice::<rjt_bench::citm_catalog::CitmCatalog>(&input).unwrap(),
-                    );
-                }
-                File::Canada => {
-                    drop(turbo::from_slice::<rjt_bench::canada::Canada>(&input).unwrap());
-                }
-            },
+            Column::StructParse => {
+                rjt_bench::by_fixture!(*file, count_struct_parse, (&input));
+            }
             Column::DomStringify | Column::StructStringify => {
                 // Parse FIRST, then reset, so only serialize work is counted.
                 // The sink counts its own calls, which is how brick B5 gets
@@ -437,24 +644,7 @@ fn work(args: &[String]) -> ExitCode {
                     turbo::counters::reset();
                     turbo::to_writer(&mut sink, &dom).unwrap();
                 } else {
-                    match file {
-                        File::Twitter => {
-                            let v: rjt_bench::twitter::Twitter = turbo::from_slice(&input).unwrap();
-                            turbo::counters::reset();
-                            turbo::to_writer(&mut sink, &v).unwrap();
-                        }
-                        File::CitmCatalog => {
-                            let v: rjt_bench::citm_catalog::CitmCatalog =
-                                turbo::from_slice(&input).unwrap();
-                            turbo::counters::reset();
-                            turbo::to_writer(&mut sink, &v).unwrap();
-                        }
-                        File::Canada => {
-                            let v: rjt_bench::canada::Canada = turbo::from_slice(&input).unwrap();
-                            turbo::counters::reset();
-                            turbo::to_writer(&mut sink, &v).unwrap();
-                        }
-                    }
+                    rjt_bench::by_fixture!(*file, count_struct_stringify, (&input, &mut sink));
                 }
                 let c = turbo::counters::snapshot();
                 let esc_clean = c.esc_bytes.saturating_sub(c.esc_hits);

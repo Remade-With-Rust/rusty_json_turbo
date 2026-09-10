@@ -922,3 +922,229 @@ a bare string and mis-bucketing 4,373 instructions, and `Split-Path -Leaf`
 rendering every `core` file as `mod.rs`. The tool now also holds the SHA-256
 the compiler stamps into each `.cv_file` directive against the working tree, so
 a stale report says `CHANGED since the build` instead of lying quietly.
+
+### 2026-09-09 -- M1-D: S4 registered, and a corpus defect that invalidated the manifest
+
+Two things here. The registration is the planned work. The defect was found on
+the way, by counting rather than by reading, and it is the more important of
+the two because it silently made CI and a developer measure different documents.
+
+#### The defect: the corpus was not the same bytes on every platform
+
+There was no root `.gitattributes`. With `core.autocrlf=true`, a checkout
+rewrote every payload's line endings, and three things followed:
+
+1. **`twitter.json` was 646,995 bytes on such a checkout and 631,514 in the
+   repository** -- a 15,481-byte difference that is *entirely* carriage returns,
+   every one of them counted as whitespace by the content census. So CI was
+   benchmarking a document 2.4% smaller than a Windows developer was, and
+   `citm_catalog.json` differed by 50,468 bytes (2.8%).
+2. **`HASHES.txt` held the CRLF hashes**, so the integrity manifest was valid on
+   Windows only. `corpus/fetch.ps1` re-downloads the payloads from the pinned
+   upstream commit -- arriving with LF -- and verifies them against that
+   manifest. The one script whose entire job is integrity **would have failed
+   for anyone who ran it.**
+3. **Nothing noticed, because CI never ran the verification.** That is the
+   actual root cause. A manifest that is never checked is a comment.
+
+**Verified exactly reversible before changing anything.** For all 66 corpus
+files: no lone `CR` exists anywhere (every `CR` is immediately followed by `LF`,
+so none is data inside a string -- a raw control character in a JSON string is
+invalid JSON in any case), and stripping `CRLF` to `LF` reproduced **every git
+blob byte-for-byte**. So the LF form is the canonical stored form and the
+conversion is precisely the inverse of what the checkout did, rather than a
+guess about which bytes were meant.
+
+**Fixed:** `corpus/**/*.json -text` in a root `.gitattributes`, the seven
+affected payloads normalised, `HASHES.txt` regenerated, and the manifest now
+verified **in the three-OS test job** -- on ubuntu, windows and macos -- which
+is what turns "platform-independent" from an intention into a checked claim.
+All 66 files now agree across the manifest, the working tree and the git blob.
+
+Two conformance cases changed bytes and were checked for intent, not just for
+hash: `jsonchecker/fail27.json` is a literal newline inside a string and
+`fail28.json` is a backslash followed by one. Both were `CRLF` and are now
+`LF`; both still fail to parse, and for the same reason as before.
+
+#### What moved, stated precisely
+
+**No ratio moved.** Every paired measurement in this ledger has both arms
+reading the same file, so `1.208x` is `1.208x` on either corpus. What moved is
+absolute MB/s (a cell has 2.4% fewer bytes to chew) and every byte-percentage.
+
+Re-censused with an **independent instrument** -- a hand-written tokeniser in
+`python`, not a re-run of the Rust census, so the two cross-check each other:
+
+| file | bytes (was) | whitespace | string | number | literal | structural | non-ASCII |
+|---|---|---:|---:|---:|---:|---:|---:|
+| twitter | **631,514** (646,995) | **26.07%** (27.8%) | 64.19% | 1.56% | 3.39% | 4.80% | **15.11%** (14.7%) |
+| citm_catalog | **1,727,204** (1,777,672) | **71.03%** (71.9%) | 15.90% | **7.35%** (7.1%) | 0.29% | 5.43% | 0.02% |
+| canada | **2,251,051** (2,251,060) | 0.00% | 0.01% | **90.08%** (90.1%) | 0.00% | 9.92% | 0.00% |
+
+The string column needs its definition stated, because the two instruments
+disagree by design and that disagreement is worth recording rather than
+resolving in favour of whichever is prettier. This tokeniser counts a string
+token **including its delimiters**; the Rust census counts string **content**,
+which is what a scanner actually walks. For twitter the gap is 38,684 bytes
+against 19,327 strings times two quotes = 38,654, so the two agree to within
+the escape count -- which is the cross-check passing. Content-only, twitter is
+**58.06%** string (366,689 of 631,514), against the 57.1% published on the
+CRLF file.
+
+`canada` is unaffected in substance: nine carriage returns in 2.25 MB.
+
+#### The registration: S4 is now measurable and gated
+
+- **`corpus::File` carries all ten documents.** The classic trio is frozen as
+  `File::S1_S3`, and a timing verb's `--all` still means exactly those three in
+  exactly that order, so a number quoted today stays comparable with one quoted
+  before S4 existed. `File::EVERY` is both scenarios, and `all_documents()`
+  iterates it -- which puts all seven house payloads under `tests/oracle.rs`'s
+  byte-identical gate with no further work. Four tests keep the registration
+  honest: every file loads and is non-empty, `parse` round-trips every file's
+  own name, the two scenario constants partition `EVERY` exactly, and `S1_S3`
+  is asserted frozen.
+- **One file-to-fixture list.** `by_fixture!` is the only place a corpus file is
+  mapped to its Rust type, and every dispatch site expands it. Before this
+  there were three separate `match file` ladders; a document registered in one
+  and forgotten in another would have reported a number for a cell nobody was
+  running.
+- **Seven fixture modules**, each carrying serde shapes S1-S3 never enter: a
+  `flatten` tail over 25 distinct key sets, two internally-tagged enums, `Vec<u8>`
+  byte arrays, `Option`-heavy configuration, and an 18-key field matcher over
+  2,600 records. A fixture that modelled these as `Value` would compile,
+  deserialize, and measure nothing new -- so each one is round-trip tested
+  against the document it models, and the test asserts `Value` equality rather
+  than byte equality, since key order legitimately differs through a struct.
+- **A `latency` verb**, for the question `bench` cannot ask. "How long to handle
+  one message" is not "how fast can we chew 600 KB", and the two can move in
+  opposite directions when per-call setup dominates. S4 ships containers, so
+  the records are sliced out and parsed one at a time.
+  - The slicing uses the **oracle's** `RawValue`, deliberately not ours.
+    `RawValue` returns the original bytes, whitespace included, which matters
+    because `s4-media-probe.json` is 54.9% whitespace and re-serializing each
+    record through `Value` would have quietly measured a minified document.
+    Switching `raw_value` on for `turbo` would have compiled extra `cfg`-gated
+    paths into the crate under measurement and moved every timing in the suite;
+    Cargo features are additive, so a consumer could not have undone it either.
+    The oracle is never timed, so slicing with its copy costs nothing.
+  - The verb **measures its own timer overhead** in the same loop shape with
+    the parse removed, and prints it, so a reader can subtract it instead of
+    being told it is small. At message sizes of a few hundred bytes an
+    `Instant::now()` pair is not negligible, which is exactly why it is
+    reported rather than assumed.
+  - Per-message **struct** parse is refused rather than faked: it needs a
+    fixture for the element type, not the document type, and those do not
+    exist. `--column struct-parse` errors out saying so. Silently measuring the
+    container instead would be the failure the plan calls `m4=0`.
+- **CI gates the new work**: the corpus manifest on three platforms; `python
+  tools/gen-s4.py --check`, since S4 is generated rather than fetched and
+  `HASHES.txt` therefore cannot cover it; both arms of the escape knob agreeing
+  with upstream; and a counter assertion that the wide escape scan is still
+  reached, on the same pattern as the whitespace knob's.
+
+#### One more corpus correction, from the same counting
+
+`corpus/README.md` credited `twitter.json` with "Unicode escapes". It has none.
+Its 15.11% non-ASCII is all raw UTF-8; `citm_catalog.json` has two two-byte
+escapes and `canada.json` none. **So the hex-escape decoder and the
+surrogate-pair path were never on the timed corpus at all** -- they were
+exercised only by the conformance set and the soak. `s4-ocr-i18n.json` puts
+both under measurement for the first time, with 5,671 hex escapes and 1,032
+surrogate pairs.
+
+#### First measurements off S4, which is what the registration was for
+
+Deterministic counts, `rjson-bench work`, library `--features profile`.
+
+| file | column | keys | str runs | str bytes | mean run | borrow / copy | esc hit rate |
+|---|---|---:|---:|---:|---:|---:|---:|
+| s4-frame-telemetry | struct-parse | 46,816 | 49,420 | 176,964 | 3.6 B | 49,420 / 0 | -- |
+| s4-sync-envelope | struct-parse | 13,182 | 19,529 | 122,584 | 6.3 B | 19,529 / 0 | -- |
+| s4-media-probe | struct-parse | 11,806 | 17,946 | 169,812 | 9.5 B | 17,567 / 76 | -- |
+| s4-ocr-i18n | dom-parse | 17,923 | 33,254 | 212,940 | 6.4 B | **21,438 / 1,371** | -- |
+| s4-vault-shard | dom-parse | 80 | **136** | 438,791 | **3,227 B** | 136 / 0 | -- |
+| s4-ocr-i18n | dom-stringify | -- | -- | -- | -- | -- | **2.73%** |
+
+Three of these are regimes the classic trio simply does not contain, and each
+one bears on a brick:
+
+- **`s4-vault-shard` has a mean string run of 3,227 bytes**, against 19.0 on
+  `twitter` and 8.3 on `citm_catalog` -- a 170x difference, from a single
+  87,384-byte value. This is the long-string regime **brick B2 was written
+  for**, and until now the corpus had no example of it. B2 stays demoted for
+  S1-S3, where the strings are far too short to feed a wider step, but this
+  file is where it must be re-priced before the question is closed. The same
+  document is 136 scanner runs for 438,791 bytes; `twitter` is 19,327 runs for
+  366,689.
+- **`s4-ocr-i18n` has a 2.73% escape hit rate**, eight times `twitter`'s 0.334%
+  and three thousand times `citm_catalog`'s 0.0009%. It is also the only corpus
+  file that loses the zero-copy borrow at any rate worth measuring: **1,371
+  copies against 21,438 borrows, 6.0%**, where `twitter` is 1.7% and
+  `citm_catalog` is one copy in 26,604. Escaped strings force a scratch copy,
+  so this is the file that prices the escape DECODER -- and per the emitted-asm
+  census, the scratch path is also where `read.rs`'s six `memcpy` calls live.
+  The corpus had no such file before.
+- **`s4-frame-telemetry` is 46,816 keys over 3.6-byte mean strings** -- the
+  highest key density in the corpus at 80.3 keys/KB, against `citm_catalog`'s
+  15. This is the field-matcher workload for **B6 / B6d / B6h**, and it is the
+  reason those bricks could not honestly be priced on S1-S3.
+
+#### And the latency finding, which throughput could not have shown
+
+`rjson-bench latency --all --messages 6000`, per-message `dom-parse`, records
+sliced out of their containers with the oracle's `RawValue` so the original
+bytes survive. Timer overhead measured at 0 ns against a **100 ns resolution**,
+so every figure is quantised to 100 ns and the tool says so in its own output.
+
+| file | msgs | mean B | p50 ns | p90 ns | p99 ns | implied MB/s |
+|---|---:|---:|---:|---:|---:|---:|
+| s4-frame-telemetry | 2,600 | 227 | 1,600 | 1,700 | 1,900 | 142 |
+| s4-signin-batch | 600 | 781 | 4,100 | 7,000 | 20,000 | 190 |
+| s4-sync-envelope | 280 | 757 | 6,700 | 10,700 | 16,700 | **113** |
+| s4-media-probe | 75 | 3,189 | 23,400 | 29,300 | 48,800 | 136 |
+| s4-ocr-i18n | 90 | 4,391 | 29,400 | 63,400 | 102,700 | 149 |
+| s4-vault-shard | 4 | 87,623 | 12,000 | 12,900 | 19,000 | **7,302** |
+
+**A 65x spread in bytes per second, driven by message size alone.** A 757-byte
+sync entry runs at 113 MB/s; an 87 KB vault shard at 7,302 MB/s. Nothing about
+the parser changes between those two rows -- what changes is how much per-call
+setup each byte has to carry. Every throughput number this project has
+published is from the right-hand end of that range, on documents of 631 KB and
+up, and a house service handling 757-byte sync entries is operating at a
+fiftieth of the advertised rate.
+
+That is not a defect, it is a different question, and it is exactly the
+question `bench` cannot ask. It also names the next brick class honestly: for
+small messages the win is in per-call setup, not in any of the byte-at-a-time
+kernels the campaign has been sharpening. `s4-node-config` exists in the corpus
+for the same reason (key reuse 1.6, so nothing amortises).
+
+`max` is reported and deliberately not quoted: it runs 30x to 100x above p99
+because it is scheduler noise on a shared machine, not the parser. p99 is the
+operating number.
+
+#### Coverage this unlocked, stated as a count
+
+The oracle's byte-identical gate now covers **73 corpus documents**, up from
+66. The seven additions include the first hex escapes and the first surrogate
+pairs the timed corpus has ever held, and they pass byte-identically to
+upstream on the first run.
+
+One upstream limitation was found and pinned down rather than worked around:
+an internally-tagged enum with an `f64` field behind the tag **cannot** be
+deserialised under `arbitrary_precision`, because the tag makes serde buffer
+the content and a buffered number becomes a map under that feature.
+`tests/ap_probe.rs` puts the minimal case through **both** crates and asserts
+they fail identically, with the same message, and that the same field outside a
+tag still works in both. So the fork's behaviour is correct -- identical
+failure is part of a byte-identical contract -- and the affected fixture case
+is skipped under that one feature with the reason recorded at the skip.
+
+A second, smaller trap came from the same direction and is the day-one oracle
+bug seen from the other side: under `arbitrary_precision` a `Number` keeps its
+original digits, so `0.95920` in `s4-frame-telemetry.json` compares unequal to
+the `0.9592` any `f64` field re-serialises. The value is identical; the
+trailing zero is formatting. The fixture gate now compares such numbers by
+parsed value while still treating an integer-versus-float difference as the
+fixture bug it is.

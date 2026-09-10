@@ -37,6 +37,21 @@ jobs:
       - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
+      # THE CORPUS IS THE MEASUREMENT, so its bytes are gated before anything
+      # runs on them, and gated on all three runners -- which is the point.
+      # This check did not exist, and its absence hid a real defect: with no
+      # root `.gitattributes`, a `core.autocrlf=true` checkout rewrote every
+      # payload's line endings, so `HASHES.txt` held the CRLF hashes and was
+      # valid only on Windows, CI was benchmarking a `twitter.json` 2.4%
+      # smaller than a Windows developer was, and `corpus/fetch.ps1` -- whose
+      # entire job is to re-download and verify -- would have failed for
+      # anyone who ran it. Verifying on three platforms is what makes
+      # "platform-independent" a checked claim rather than an intention.
+      - name: The corpus is byte-for-byte the manifest, on every platform
+        shell: bash
+        working-directory: corpus
+        run: |
+          shasum -a 256 -c HASHES.txt             || sha256sum -c HASHES.txt             || { echo '::error::corpus does not match HASHES.txt -- see the root .gitattributes'; exit 1; }
       - name: Upstream test suite against the fork
         run: cargo test -p rusty_json_turbo --locked
       - name: Feature matrix (upstream's own list)
@@ -172,6 +187,28 @@ jobs:
           echo "peek calls: fast=$on slow=$off"
           test "$on" -lt $((off / 2)) \
             || { echo "::error::the whitespace fast path is not removing peek calls (fast=$on slow=$off)"; exit 1; }
+      # S4 is GENERATED, not fetched, so `HASHES.txt` cannot gate it. The
+      # generator regenerating its own output byte-for-byte is the equivalent
+      # check: a corpus that drifted between runs would silently invalidate
+      # every number ever taken against it.
+      - name: The S4 corpus is exactly what its generator produces
+        run: python tools/gen-s4.py --check
+      # Same rule as the whitespace knob, for the escape scan: both arms must
+      # agree with upstream, and the wide arm must actually be reached.
+      - name: Both arms of the escape knob agree with upstream
+        run: |
+          for v in 0 1; do
+            RJT_ESC_WIDE=$v cargo run -p rusty_json_turbo-bench --release --locked               --features turbo/knobs -- diff-oracle corpus/twitter.json | tail -1
+          done
+      - name: The wide escape scan is still plugged in
+        run: |
+          cargo build -p rusty_json_turbo-bench --release --locked --features turbo/profile
+          steps() {
+            RJT_ESC_WIDE=$1 ./target/release/rjson-bench work               --cell twitter,dom-stringify | tail -1 | awk '{print $6}'
+          }
+          on=$(steps 1); off=$(steps 0)
+          echo "escape scanner steps: wide=$on scalar=$off"
+          test "$on" -lt $((off / 2))             || { echo "::error::the wide escape scan is not removing steps (wide=$on scalar=$off)"; exit 1; }
       - name: The allocation census runs and reports non-zero work
         run: |
           cargo run -p rusty_json_turbo-bench --release --locked --features profile -- \

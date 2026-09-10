@@ -138,6 +138,57 @@ pub trait Fixture: serde::de::DeserializeOwned + serde::Serialize {}
 impl Fixture for crate::canada::Canada {}
 impl Fixture for crate::citm_catalog::CitmCatalog {}
 impl Fixture for crate::twitter::Twitter {}
+impl Fixture for crate::s4_media_probe::MediaProbe {}
+impl Fixture for crate::s4_frame_telemetry::FrameTelemetry {}
+impl Fixture for crate::s4_signin_batch::SigninBatch {}
+impl Fixture for crate::s4_sync_envelope::SyncEnvelope {}
+impl Fixture for crate::s4_node_config::NodeConfig {}
+impl Fixture for crate::s4_vault_shard::VaultShard {}
+impl Fixture for crate::s4_ocr_i18n::OcrI18n {}
+
+/// Call a generic function with the fixture type belonging to `$file`.
+///
+/// THE ONLY place a corpus file is mapped to its Rust type. Every dispatch
+/// site expands this one list, so a file cannot be registered for the census
+/// and forgotten for the clock -- a split that would report a number for a
+/// cell nobody was actually running.
+///
+/// `$call` is an `ident` rather than a `path` because a `path` fragment cannot
+/// be followed by a turbofish, and every arm needs one. Paths are `$crate`-
+/// rooted so the binary crate can expand this too.
+#[macro_export]
+macro_rules! by_fixture {
+    ($file:expr, $call:ident, ($($arg:expr),* $(,)?)) => {
+        match $file {
+            $crate::corpus::File::Canada => $call::<$crate::canada::Canada>($($arg),*),
+            $crate::corpus::File::CitmCatalog => {
+                $call::<$crate::citm_catalog::CitmCatalog>($($arg),*)
+            }
+            $crate::corpus::File::Twitter => $call::<$crate::twitter::Twitter>($($arg),*),
+            $crate::corpus::File::S4MediaProbe => {
+                $call::<$crate::s4_media_probe::MediaProbe>($($arg),*)
+            }
+            $crate::corpus::File::S4FrameTelemetry => {
+                $call::<$crate::s4_frame_telemetry::FrameTelemetry>($($arg),*)
+            }
+            $crate::corpus::File::S4SigninBatch => {
+                $call::<$crate::s4_signin_batch::SigninBatch>($($arg),*)
+            }
+            $crate::corpus::File::S4SyncEnvelope => {
+                $call::<$crate::s4_sync_envelope::SyncEnvelope>($($arg),*)
+            }
+            $crate::corpus::File::S4NodeConfig => {
+                $call::<$crate::s4_node_config::NodeConfig>($($arg),*)
+            }
+            $crate::corpus::File::S4VaultShard => {
+                $call::<$crate::s4_vault_shard::VaultShard>($($arg),*)
+            }
+            $crate::corpus::File::S4OcrI18n => {
+                $call::<$crate::s4_ocr_i18n::OcrI18n>($($arg),*)
+            }
+        }
+    };
+}
 
 /// One `ours` op for a cell, with the allocations it made.
 ///
@@ -148,11 +199,7 @@ pub fn census_once(
     column: Column,
     input: &[u8],
 ) -> (usize, Option<crate::alloc_arm::Census>) {
-    match file {
-        File::Canada => census_typed::<crate::canada::Canada>(column, input),
-        File::CitmCatalog => census_typed::<crate::citm_catalog::CitmCatalog>(column, input),
-        File::Twitter => census_typed::<crate::twitter::Twitter>(column, input),
-    }
+    crate::by_fixture!(file, census_typed, (column, input))
 }
 
 fn census_typed<T: Fixture>(
@@ -210,13 +257,7 @@ fn census_typed<T: Fixture>(
 
 /// Run one (arm, file, column) cell for `window`, returning every iteration.
 pub fn run(arm: Arm, file: File, column: Column, input: &[u8], window: Duration) -> Sample {
-    match file {
-        File::Canada => run_typed::<crate::canada::Canada>(arm, column, input, window),
-        File::CitmCatalog => {
-            run_typed::<crate::citm_catalog::CitmCatalog>(arm, column, input, window)
-        }
-        File::Twitter => run_typed::<crate::twitter::Twitter>(arm, column, input, window),
-    }
+    crate::by_fixture!(file, run_typed, (arm, column, input, window))
 }
 
 /// Repeat `op` until `window` has elapsed (and at least three times), collecting

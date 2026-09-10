@@ -1,0 +1,29 @@
+# Corpus payloads are DATA, and their exact bytes are the measurement.
+#
+# Without this file, a checkout with `core.autocrlf=true` rewrote every corpus
+# payload's line endings, which had three consequences, all of them found by
+# counting rather than by reading:
+#
+#   1. `twitter.json` was 646,995 bytes on such a checkout and 631,514 in the
+#      repository -- a 15,480-byte difference that is entirely carriage returns
+#      counted as whitespace. So its measured whitespace share was 27.8% on one
+#      platform and 26.0% on another, and CI was benchmarking a 2.4% smaller
+#      document than a Windows developer was.
+#   2. `HASHES.txt` held the CRLF hashes, so it was valid ONLY on a Windows
+#      checkout. `corpus/fetch.ps1` re-downloads the payloads (arriving with
+#      LF) and verifies them against that manifest, so the one script whose
+#      entire job is integrity would have failed for anyone who ran it.
+#   3. Nothing noticed, because CI never ran the verification.
+#
+# `-text` means git stores and checks out these bytes verbatim on every
+# platform. Ratios were never affected by any of this -- both arms of a paired
+# run read the same file -- but absolute MB/s and every byte-percentage were,
+# so `corpus/LEDGER.md` records which figures moved when this landed.
+corpus/**/*.json -text
+
+# The manifest is text, but pin its endings too: a hash file whose own line
+# endings drift is a needless source of spurious diffs.
+corpus/HASHES.txt text eol=lf
+
+# Raw benchmark logs are evidence. Keep them byte-stable for the same reason.
+corpus/runs/** -text

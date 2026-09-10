@@ -46,6 +46,38 @@ carry their measured numbers and method line, never an adjective.
   and **deterministic work counters** (`rjson-bench work`, library feature
   `profile`) with an `RJT_*` A/B knob (feature `knobs`) so two implementations
   can be compared inside one binary rather than across two code layouts.
+- **S4 registered in the harness**, so the house payloads are measurable and
+  gated rather than merely present. `File` carries all ten documents with the
+  classic trio frozen as `File::S1_S3` (a timing verb's `--all` still means
+  those three, so a number quoted today stays comparable with one quoted before
+  S4 existed) and `File::EVERY` for the oracle and census. The file-to-fixture
+  mapping is now a single `by_fixture!` list that every dispatch site expands,
+  so a document cannot be registered for the census and forgotten for the clock.
+  Seven fixture modules carry the serde shapes S1-S3 never enter: a `flatten`
+  tail over 25 distinct key sets, two internally-tagged enums, `Vec<u8>` byte
+  arrays, `Option`-heavy configuration, and an 18-key field matcher over 2,600
+  records.
+- **A `latency` verb**, for the question `bench` cannot answer: not "how fast
+  can we chew 600 KB" but "how long to handle one message", which is what a
+  service with a p99 target operates on. S4's containers are sliced into their
+  records with the **oracle's** `RawValue` -- deliberately not ours, since
+  enabling `raw_value` on the crate under measurement would compile extra paths
+  into it and move every timing in the suite. The verb reports p50/p90/p99/max
+  and **measures its own timer overhead** in the same loop shape with the parse
+  removed, so a reader can subtract it instead of trusting that it is small.
+- **CI gates the new work**: `python tools/gen-s4.py --check` (S4 is generated,
+  not fetched, so `HASHES.txt` cannot cover it and byte-for-byte regeneration is
+  the equivalent check), plus both arms of the escape knob agreeing with
+  upstream and a counter assertion that the wide escape scan is still reached.
+- **Two corpus corrections, both found by counting rather than reading.** S1
+  contains **no** hex escapes -- `corpus/README.md` claimed "Unicode escapes"
+  for `twitter.json`, whose 14.75% non-ASCII is all raw UTF-8 -- so the
+  hex-escape decoder and surrogate-pair path had never been on the timed corpus
+  at all. And with no root `.gitattributes`, a `core.autocrlf=true` checkout
+  makes `twitter.json` 646,995 bytes instead of 631,515, a 15,480-byte
+  difference that is entirely carriage returns counted as whitespace; S1-S3 byte
+  counts are therefore platform-dependent today. Both are now stated in
+  `corpus/README.md`.
 - **Brick B3**: the serializer's escape scan takes **eight bytes per step**.
   The escape table is nonzero for exactly `0x00..=0x1F`, `"` and a backslash,
   and `b < 0x20` is exactly `b & 0xE0 == 0`, so the predicate is three exact

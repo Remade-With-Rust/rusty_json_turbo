@@ -147,7 +147,7 @@ of having instruments first.
 
 ##### Landed: the whitespace path
 
-`citm_catalog.json` is **71.9% whitespace**, and skipping it was **36% of the
+`citm_catalog.json` is **71.0% whitespace**, and skipping it was **36% of the
 time to parse that file into a `Value`** — measured, not guessed, by running the
 same document with the skippable whitespace removed. It went through
 `peek()`/`discard()` one byte at a time. It now walks the run in one pass, eight
@@ -168,7 +168,7 @@ machine. `> 1` means the new path is faster; the session's null-arm floor was
 | twitter | struct parse | 791 MB/s | **813 MB/s** | **1.036x** |
 | any file | stringify | — | — | 0.997x–1.008x (control, unmoved) |
 
-**Eight digits per step** (`canada.json` is 90.1% number bytes):
+**Eight digits per step** (`canada.json` is 90.08% number bytes):
 
 | file | workload | before | after | ratio |
 |---|---|---:|---:|---:|
@@ -178,7 +178,7 @@ machine. `> 1` means the new path is faster; the session's null-arm floor was
 | twitter | any workload | — | — | at the floor (1.5% number bytes) |
 | stringify ×6, scan ×3 | — | — | — | 0.999x–1.010x (control, unmoved) |
 
-**Eight bytes per escape step, on stringify** (`twitter` is 57.1% string; the
+**Eight bytes per escape step, on stringify** (`twitter` is 58.1% string; the
 escape hit rate is 0.334%):
 
 | file | workload | before | after | ratio |
@@ -204,12 +204,23 @@ byte; this one has no peel, because a string scan runs the length of a whole
 string. Same technique, opposite shape, because the census said so.</sub>
 
 <sub>The gradient across the three files is the corpus census read back:
-`canada` is 90.1% number and moves most, `citm_catalog` is 7.1% and moves a
+`canada` is 90.08% number and moves most, `citm_catalog` is 7.35% and moves a
 little, `twitter` is 1.5% and does not move. Nine control cells stayed inside 1%.
 The step is exact, not approximate — below a bound where eight more digits
 provably cannot overflow a `u64`, the chunk takes the same branch the
 byte-at-a-time loop would have taken, including the digit at which a long number
 switches to the slow float path.</sub>
+
+<sub>**One honest caveat on the absolute MB/s above.** They were taken before
+the corpus was pinned platform-independent. There was no root `.gitattributes`,
+so a `core.autocrlf=true` checkout inflated `twitter.json` from 631,514 to
+646,995 bytes -- 15,481 carriage returns, every one counted as whitespace --
+and `citm_catalog.json` by 50,468. **No ratio in this README is affected**:
+both arms of every paired run read the same file, so 1.208x is 1.208x either
+way. The absolute MB/s figures are on the 2.4% larger documents and will read
+slightly differently now, and the byte-percentages have been recomputed. The
+manifest was regenerated and is now verified on all three CI runners; the full
+account is in `corpus/LEDGER.md` under M1-D.</sub>
 
 <sub>**A four-digit step was built on top of it twice and reverted twice**, and
 the second time is the one worth reading. At the fraction call site it hits

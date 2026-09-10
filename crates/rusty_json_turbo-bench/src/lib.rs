@@ -47,6 +47,17 @@ pub mod empty;
 pub mod prim_str;
 pub mod twitter;
 
+// S4, the house payloads. One module per document, each doc-commented with the
+// serde path it puts under measurement -- `flatten` tails, internally-tagged
+// enums, `Vec<u8>` fields and high-arity field matchers that S1-S3 never enter.
+pub mod s4_frame_telemetry;
+pub mod s4_media_probe;
+pub mod s4_node_config;
+pub mod s4_ocr_i18n;
+pub mod s4_signin_batch;
+pub mod s4_sync_envelope;
+pub mod s4_vault_shard;
+
 pub mod alloc_arm;
 pub mod cells;
 pub mod content;
