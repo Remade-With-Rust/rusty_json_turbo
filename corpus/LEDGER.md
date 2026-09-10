@@ -3173,3 +3173,138 @@ update serde_json` fixes it, and afterwards the shim reaches
 > successful build, which is precisely the silent-skip shape this project has
 > been bitten by three times (the `.ndjson` filter, the opt-in island, the
 > feature-gated wasm tests).
+
+### 2026-09-10 -- M7: nine repositories swapped, and four ways the swap can lie to you
+
+Nine workspaces now resolve `serde_json` to the fork, each verified with
+`cargo tree -i serde_json` rather than assumed from the edit. Seven have their
+suites green; the remaining two cannot be validated here for reasons that
+predate the swap and are proved to predate it.
+
+| repo | tests | fixtures through the oracle | verdict |
+|---|---|---|---|
+| **rusty_time** | **217 green** | 124 docs, 6,465 number tokens, **0 mismatches** | swapped |
+| **mid** | **184 green** | (its JSON is built in code, not on disk) | swapped |
+| **terra** | **81 green** | 1 doc, 0 mismatches | swapped |
+| **mata-maestro** | **49 green** | 1 doc, 0 mismatches | swapped |
+| **thesoilapp** | **13 green** | 3 docs, 0 mismatches | swapped |
+| **rusty_dds** | **89 green**, 6 fail | 19 docs, 1,098 tokens, 0 mismatches | swapped; the 6 are PRE-EXISTING |
+| **remade_ffmpeg_rs** | green but 1 | -- | swapped; the 1 is PRE-EXISTING |
+| rusty_zstd | cannot build | 1 doc, 0 mismatches | swapped, unvalidatable (pre-existing) |
+| mata-oem-sidecar | cannot resolve | -- | swapped, unvalidatable (pre-existing) |
+
+Also patched and resolution-verified, awaiting a push of the shim before their
+git-form patch can resolve: `FFai`, `mata-master`, and janus's `espino`,
+`rusty_esp_iroh` and `rusty_esp_mid`.
+
+**Eight repositories were deliberately left alone** because their working trees
+carry uncommitted work -- `Dial`, `faceless-man`, `faucet`, `deputy`,
+`rag-converter`, `rs_AV2ed`, `rusty_maplibre`, and `rusty_RAG`/`rusty_RTOS`
+(which have no root manifest and hold 20 and 16 workspace roots respectively).
+`deputy`'s tree has twelve DELETED tracked files; a build failure there would
+have been blamed on the fork.
+
+#### EVERY FAILURE GOT A CONTROL ARM
+
+A failing test in a swapped repository proves nothing on its own. Each one was
+re-run with the patch removed -- same machine, same minute -- because without
+that a pre-existing failure gets blamed on the fork and a real regression gets
+excused as pre-existing. `tools`-side, that is `baseline.sh`.
+
+- `rusty_dds`: 6 `encode_determinism` failures, **identical output with and
+  without the patch**. Frozen texture-encoder hashes drifting from the encoder;
+  `serde_json` is only a dev-dependency there and those tests never touch it.
+- `remade_ffmpeg_rs`: `decodes_av2f_byte_identical_to_the_reference`,
+  identical both ways.
+- `mata-oem-sidecar`: `failed to select a version for mid-signin = "^0.1.1"`,
+  identical both ways -- it declares `{ path = "../mid/mid-signin", version =
+  "0.1.1" }` while `mid` is now 0.2.0, so the path is rejected and the registry
+  has no such crate. Adding the patch forces a re-resolve, which is what
+  SURFACES it; the cause is a stale version requirement.
+- `rusty_zstd`: its bench examples call `take_*` functions the library exports
+  only under its `profile`/`dupladder` features.
+
+**And the control arm caught a fault in my own instrument.** The first verdict
+compared the two arms' output text and declared `rusty_zstd` DIFFERENT --
+because cargo reports failures across examples in nondeterministic order, so
+the two arms named different missing functions while failing on the same crate
+with the same error code. The comparison is now on a FINGERPRINT: the set of
+failing crates, the set of error codes, and the pass/fail tallies. A control
+arm that is too strict manufactures regressions exactly as readily as no
+control arm hides them.
+
+#### FOUR WAYS THIS SWAP CAN LIE, ALL FOUND BY DOING IT
+
+**1. A stale lockfile makes the patch a no-op, with a WARNING.** Three repos
+took the patch and kept building against upstream, because a patch offering
+1.0.151 does not match a pin of 1.0.149. `cargo update serde_json` fixes it.
+`rusty_time` worked first time only because its lock already sat on 1.0.151 --
+luck, not correctness. **So the verification is `cargo tree -i serde_json`
+showing the fork, never the edit.**
+
+**2. A stale duplicate checkout.** Five repositories exist on both `F:` and
+`C:`, and for three the live copy is on C:. `mata-master`'s F: copy is missing
+its workspace root and cannot build at all; its C: copy has 107 declarations.
+`janus` exists only on C: and was missed entirely by the first survey. **A swap
+applied to the wrong copy looks done and changes nothing.**
+
+**3. A TRACKED `.cargo/config.toml`.** The local path override used to validate
+against an unpushed shim belongs in a gitignored file -- but `terra`,
+`mata-master`, `FFai`, `rusty_esp_iroh` and `rusty_esp_mid` all track theirs
+(toolchain paths, wasm flags, a macOS codesign runner). Appending to one of
+those would have committed a patch pointing at `F:/coding/rusty_json_turbo`.
+Use `cargo --config 'patch.crates-io.serde_json.path="..."'` instead, which
+touches no file.
+
+**4. `git checkout -b X || git checkout X` can leave you on the branch you
+started on**, and then the commit lands on someone's feature branch. It did:
+the `remade_ffmpeg_rs` swap was committed onto `mp3-noise-shaping` before being
+moved off it, with that branch restored to its own tip. **Assert the branch
+after switching, do not infer it from the exit status of a fallback chain.**
+
+#### AND THE BIGGEST DIFFERENTIAL RUN THIS PROJECT HAS TAKEN
+
+The consumers' own fixtures are the point of G8, and two of them carry a
+corpus far larger than this project's own: `FFai` holds 1,722 JSON documents
+(OCR ground truth, model configs, benchmark records) and `faucet` 23 (lead
+enrichment and SERP exports, the largest a single 50 MB file). Handed to the
+differential oracle:
+
+```text
+files listed:        1,825
+batches:                46 (failed: 0)
+documents checked:   1,825
+number tokens:     857,264
+document mismatches:     0
+number mismatches:       0
+```
+
+**About 900 MB of real production JSON, byte-identical to upstream** -- output
+bytes, `Value`, error text with line and column, float bit patterns and
+`StreamDeserializer` offsets. That is 19x this project's own corpus by
+document count and it found nothing, which is the result a byte-identical
+contract is supposed to produce.
+
+**The number took three attempts, and the first two were the harness lying.**
+An `xargs` pipeline reported 1,643 documents, then 1,543, for the same input.
+Neither was the oracle: two FFai filenames contain spaces and CJK bracket
+characters, which `xargs` word-split into non-existent paths, and
+`diff-oracle` exits on the first unreadable file -- so a whole chunk vanished
+with its error line filtered out by the very grep that was collecting the
+summaries. Splitting on newlines only fixed the paths; what fixed the
+ACCOUNTING was
+running in batches that record each batch's exit status, so a lost batch is
+reported instead of silently shortening the total.
+
+> **A total assembled from a pipeline that can drop a chunk is not a total.**
+> The batch runner now prints `files listed` beside `documents checked`, and
+> they have to match.
+
+#### What the swap is NOT yet
+
+Nothing is pushed. The committed manifests name the fork's git remote, which
+cannot resolve until `crates/serde_json-shim` is pushed -- so the shipped form
+is validated by construction and by the path-form runs above, not yet by a
+fetch. And no consumer has been re-measured: G8 asks for S4 numbers re-taken on
+the consumers' real payloads, which is the next piece of work and needs the
+swap live rather than local.
