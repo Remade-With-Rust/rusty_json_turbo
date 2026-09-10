@@ -60,6 +60,21 @@ have fired over that span. Output, errors and float bits are unchanged and the
 oracle gates it. There is deliberately **no four-digit variant**; the comment in
 `parse_decimal` records why, and `corpus/LEDGER.md` records the measurements.
 
+### `src/read.rs` -- `IoRead::new` documentation (M5)
+
+Upstream tells the reader to wrap the input in `std::io::BufReader` because
+serde_json does not buffer, without distinguishing where the data comes from.
+That advice is essential for a `File` -- `bytes()` is one `read` syscall per
+byte without it -- and actively harmful for data already in memory, where there
+are no syscalls to amortise and it only adds a second per-byte layer on top of
+the bottleneck. Measured: a `BufReader` around a `&[u8]` costs `citm_catalog`
+412 -> 375 MB/s and `twitter` 289 -> 248 MB/s.
+
+The rewritten comment splits the two cases and points at `from_slice` for bytes
+already in memory, which is 1.28x to 1.55x faster than any reader path because
+it can scan whitespace sixteen bytes at a time. Documentation only; no
+behaviour changes.
+
 ## The serde fork: ZERO divergences, and that is a decision
 
 `Remade-With-Rust/serde` branch `turbo` sits at `a874a1b`, **unmodified**, and

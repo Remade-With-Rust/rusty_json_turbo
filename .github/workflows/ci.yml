@@ -217,6 +217,18 @@ jobs:
       # probe's two arms must go on building identical values -- a probe whose
       # arms drift apart stops being a comparison -- and B14's finding is that
       # nothing reaches `deserialize_in_place`, which only a test can hold.
+      # S6's gate. The timed corpus exercises the hot paths hard and the cold
+      # ones barely at all, so this is where a byte-identical contract quietly
+      # breaks. Run at EVERY isa rung, because the newline cases are what would
+      # catch a wide whitespace scanner that miscounts lines -- a fault
+      # invisible until an error has to name one.
+      - name: Cold paths agree with upstream, at every rung
+        shell: bash
+        run: |
+          for isa in scalar swar sse2 avx2; do
+            echo "--- RJT_ISA=$isa"
+            RJT_ISA=$isa cargo test -p rusty_json_turbo-bench --release --locked               --test s6_cold_paths
+          done
       - name: The B6 ceiling probe still compares equal work
         run: |
           cargo run -p rusty_json_turbo-bench --release --locked --             b6 --pairs 3 --window-ms 40 | tee b6.txt

@@ -59,6 +59,7 @@ fn main() -> ExitCode {
         "work" => work(&args[1..]),
         "latency" => latency(&args[1..]),
         "b6" => b6(&args[1..]),
+        "b7" => b7(&args[1..]),
         "diff-oracle" => diff_oracle(&args[1..]),
         "list" => {
             for f in File::EVERY {
@@ -778,6 +779,213 @@ fn b6(args: &[String]) -> ExitCode {
     println!(
         "NOTE: the free arm does NOT verify whole keys, so this is an UPPER BOUND on what any \
          correct brick could win, not a prediction for one."
+    );
+    ExitCode::SUCCESS
+}
+
+/// THE B7 CEILING PROBE: what does `from_reader` cost against `from_slice`?
+///
+/// `IoRead` wraps `reader.bytes()`, an iterator yielding one `io::Result<u8>`
+/// per byte, wrapped again in a line/column counter that does bookkeeping on
+/// every one. Its string path pushes every byte into scratch, so there is no
+/// borrowed fast path either. Brick B7 proposes an internal 8-64 KB buffer
+/// that reuses the `SliceRead` scanners instead.
+///
+/// The plan names the ceiling exactly: `from_reader` against `from_slice` of
+/// the same bytes. That gap is the most B7 could ever recover, and it is
+/// measured here rather than assumed.
+///
+/// Three arms, because the middle one decides whether there is a brick at all:
+///
+/// 1. `from_slice` -- the fast path, and the target to close on.
+/// 2. `from_reader` over a `&[u8]` -- no syscalls at all, so this isolates the
+///    per-byte iterator and line-counting cost from any I/O.
+/// 3. `from_reader` over a `BufReader<&[u8]>` -- what this crate's own
+///    documentation tells users to do. If buffering already recovers the gap,
+///    B7 is redundant and should not be built.
+fn b7(args: &[String]) -> ExitCode {
+    let mut pairs = 21usize;
+    let mut window_ms = 250u64;
+    let mut file = File::Twitter;
+    let mut i = 0;
+    while i < args.len() {
+        let a = args[i].as_str();
+        i += 1;
+        match a {
+            "--pairs" | "--window-ms" => {
+                let Some(v) = args.get(i).map(String::as_str) else {
+                    eprintln!("error: {a} needs a value");
+                    return ExitCode::from(2);
+                };
+                let Ok(parsed) = v.parse::<u64>() else {
+                    eprintln!("error: {a}: {v:?} is not a number");
+                    return ExitCode::from(2);
+                };
+                if a == "--pairs" {
+                    pairs = parsed as usize;
+                } else {
+                    window_ms = parsed;
+                }
+                i += 1;
+            }
+            "--file" => {
+                let Some(v) = args.get(i).map(String::as_str) else {
+                    eprintln!("error: --file needs a value");
+                    return ExitCode::from(2);
+                };
+                let Some(f) = File::parse(v) else {
+                    eprintln!("error: unknown file {v:?}");
+                    return ExitCode::from(2);
+                };
+                file = f;
+                i += 1;
+            }
+            "--pinned" | "--commit" => i += 1,
+            other => {
+                eprintln!("error: unknown option {other:?}");
+                return ExitCode::from(2);
+            }
+        }
+    }
+
+    let input = file.load();
+
+    // WORK PARITY. All three arms must build the same value, or the timing is
+    // a comparison of different jobs.
+    {
+        let a: turbo::Value = turbo::from_slice(&input).expect("from_slice");
+        let b: turbo::Value = turbo::from_reader(&input[..]).expect("from_reader");
+        let c: turbo::Value =
+            turbo::from_reader(std::io::BufReader::new(&input[..])).expect("buffered");
+        assert_eq!(a, b, "from_reader built a different Value from from_slice");
+        assert_eq!(a, c, "BufReader built a different Value from from_slice");
+        println!("work parity: all three arms produced an equal Value");
+    }
+
+    let window = Duration::from_millis(window_ms);
+
+    fn t_slice(input: &[u8]) -> u64 {
+        let t = Instant::now();
+        let v: turbo::Value = turbo::from_slice(input).unwrap();
+        let ns = t.elapsed().as_nanos() as u64;
+        std::hint::black_box(&v);
+        ns
+    }
+    fn t_reader(input: &[u8]) -> u64 {
+        let t = Instant::now();
+        let v: turbo::Value = turbo::from_reader(input).unwrap();
+        let ns = t.elapsed().as_nanos() as u64;
+        std::hint::black_box(&v);
+        ns
+    }
+    fn t_buffered(input: &[u8]) -> u64 {
+        let t = Instant::now();
+        let v: turbo::Value = turbo::from_reader(std::io::BufReader::new(input)).unwrap();
+        let ns = t.elapsed().as_nanos() as u64;
+        std::hint::black_box(&v);
+        ns
+    }
+
+    let sample = |f: fn(&[u8]) -> u64, input: &[u8]| -> u64 {
+        let start = Instant::now();
+        let mut best = u64::MAX;
+        let mut n = 0;
+        loop {
+            best = best.min(f(input));
+            n += 1;
+            if n >= 3 && start.elapsed() >= window {
+                break;
+            }
+        }
+        best
+    };
+
+    let mut slice_ns: Vec<u64> = Vec::with_capacity(pairs);
+    let mut reader_ns: Vec<u64> = Vec::with_capacity(pairs);
+    let mut buf_ns: Vec<u64> = Vec::with_capacity(pairs);
+    let mut ratios: Vec<f64> = Vec::with_capacity(pairs);
+
+    for p in 0..pairs {
+        // Rotate which arm goes first, so no arm is always cold or always warm.
+        match p % 3 {
+            0 => {
+                slice_ns.push(sample(t_slice, &input));
+                reader_ns.push(sample(t_reader, &input));
+                buf_ns.push(sample(t_buffered, &input));
+            }
+            1 => {
+                reader_ns.push(sample(t_reader, &input));
+                buf_ns.push(sample(t_buffered, &input));
+                slice_ns.push(sample(t_slice, &input));
+            }
+            _ => {
+                buf_ns.push(sample(t_buffered, &input));
+                slice_ns.push(sample(t_slice, &input));
+                reader_ns.push(sample(t_reader, &input));
+            }
+        }
+        let (s, r) = (slice_ns[p], reader_ns[p]);
+        ratios.push(r as f64 / s as f64);
+    }
+
+    ratios.sort_by(f64::total_cmp);
+    slice_ns.sort_unstable();
+    reader_ns.sort_unstable();
+    buf_ns.sort_unstable();
+    let med = |v: &[u64]| v[v.len() / 2];
+    let mbps = |ns: u64| input.len() as f64 / ns as f64 * 1e3;
+
+    println!();
+    println!(
+        "{:<34} {:>12} {:>10} {:>12} {:>10}",
+        "arm", "median ns", "MB/s", "best ns", "best MB/s"
+    );
+    for (name, v) in [
+        ("from_slice (the target)", &slice_ns),
+        ("from_reader over &[u8]", &reader_ns),
+        ("from_reader over BufReader", &buf_ns),
+    ] {
+        println!(
+            "{:<34} {:>12} {:>10.0} {:>12} {:>10.0}",
+            name,
+            med(v),
+            mbps(med(v)),
+            v[0],
+            mbps(v[0])
+        );
+    }
+    println!();
+    println!(
+        "CEILING for B7 on {}: from_reader is {:.2}x SLOWER than from_slice \
+         (median of paired ratios, [{:.2}, {:.2}] over {} pairs)",
+        file.name(),
+        ratios[ratios.len() / 2],
+        ratios[0],
+        ratios[ratios.len() - 1],
+        pairs
+    );
+    println!(
+        "  a BufReader recovers {:.1}% of that gap; {:.2}x still remains",
+        if med(&reader_ns) > med(&slice_ns) {
+            (med(&reader_ns) as f64 - med(&buf_ns) as f64)
+                / (med(&reader_ns) as f64 - med(&slice_ns) as f64)
+                * 100.0
+        } else {
+            0.0
+        },
+        med(&buf_ns) as f64 / med(&slice_ns) as f64
+    );
+    println!(
+        "method: in-process, one binary, three arms with the leading arm rotated per round so \
+         none is always cold; pairs={}; window={} ms per arm-sample, statistic=min per-iteration \
+         time in the window; work parity asserted (equal Value) before timing; document={} ({} \
+         bytes); isa={}; allocator={}",
+        pairs,
+        window_ms,
+        file.name(),
+        input.len(),
+        turbo::counters::isa(),
+        alloc_arm::name()
     );
     ExitCode::SUCCESS
 }

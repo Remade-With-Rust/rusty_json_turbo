@@ -237,9 +237,23 @@ where
 {
     /// Create a JSON input source to read from a std::io input stream.
     ///
-    /// When reading from a source against which short reads are not efficient, such
-    /// as a [`File`], you will want to apply your own buffering because serde_json
-    /// will not buffer the input. See [`std::io::BufReader`].
+    /// This does not buffer the input, so **wrap a [`File`] or a socket in
+    /// [`std::io::BufReader`]**: without it, `bytes()` means one `read` syscall
+    /// per byte.
+    ///
+    /// **But do NOT wrap a reader whose data is already in memory** -- a
+    /// `&[u8]`, a `Cursor`, a `Vec`. There are no syscalls there for the buffer
+    /// to amortise, so it only adds a second per-byte layer on top of one that
+    /// is already the bottleneck. Measured on this corpus, a `BufReader` around
+    /// a `&[u8]` costs `citm_catalog` 412 -> 375 MB/s and `twitter` 289 -> 248
+    /// MB/s. For bytes already in memory, prefer
+    /// [`from_slice`](crate::from_slice) over `from_reader` entirely: it is
+    /// 1.28x faster on `twitter` and 1.55x on `citm_catalog`, because the
+    /// slice path can scan whitespace sixteen bytes at a time and this one
+    /// cannot see a slice to scan.
+    ///
+    /// Upstream's wording did not distinguish the two cases; the numbers above
+    /// are in `corpus/LEDGER.md` under M5.
     ///
     /// [`File`]: std::fs::File
     pub fn new(reader: R) -> Self {

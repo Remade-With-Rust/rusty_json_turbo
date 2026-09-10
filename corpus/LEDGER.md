@@ -1716,3 +1716,116 @@ never had to be written. B6h spanned both forks -- a hidden
 `__visit_field_index`, a per-`FIELDS` lookup built once per
 `deserialize_struct`, an alias and unknown-key fallback -- and one afternoon's
 probe retired it. That is the milestone working as intended rather than failing.
+
+### 2026-09-10 -- M5: the B7 ceiling, and a documentation hazard found measuring it
+
+M5 is the campaign to G2, and its biggest listed brick is B7: replace `IoRead`'s
+per-byte path with a buffer that reuses the `SliceRead` scanners. The plan names
+the ceiling exactly -- `from_reader` against `from_slice` of the same bytes --
+so that is what was measured first.
+
+#### What `from_reader` costs today
+
+`IoRead` wraps `reader.bytes()`, an iterator yielding one `io::Result<u8>` per
+byte, wrapped again in a `LineColIterator` that does line and column
+bookkeeping on every one. Its string path pushes every byte into scratch, so
+unlike `SliceRead` there is no borrowed fast path at all.
+
+Three arms in one process, leading arm rotated per round, min-per-iteration
+statistic, work parity asserted (all three build an equal `Value`) before
+timing. 15 pairs. `rjson-bench b7`.
+
+| file | `from_slice` | `from_reader` over `&[u8]` | `from_reader` over `BufReader` | ceiling |
+|---|---:|---:|---:|---:|
+| citm_catalog | **646 MB/s** | 412 MB/s | 375 MB/s | **1.55x** |
+| twitter | **369 MB/s** | 289 MB/s | 248 MB/s | **1.28x** |
+| canada | 273 MB/s | 269 MB/s | 320 MB/s | 1.10x (range [0.79, 1.24]) |
+| s4-frame-telemetry | 146 MB/s | 140 MB/s | 141 MB/s | 1.02x |
+
+**The ceiling tracks whitespace, and that is the whole story.** `citm_catalog`
+is 71.0% whitespace and shows 1.55x; `twitter` is 26.1% and shows 1.28x;
+`canada` has 33 whitespace bytes in 2.25 MB and `s4-frame-telemetry` is
+minified, and both show nothing.
+
+The reason is structural: every whitespace brick this project has landed --
+B1, B1s and the M3 SIMD island -- works on a SLICE. `IoRead` has no slice, so
+none of them applies, and every whitespace byte goes back through the per-byte
+iterator. The reader path is still running the 2026-09-09 parser.
+
+#### The gap decomposes, which decides how B7 has to be built
+
+Running the same probe with the whitespace fast path switched off
+(`RJT_WS_FASTPATH=0`) separates the two causes on `citm_catalog`:
+
+| arm | ns | |
+|---|---:|---|
+| `from_slice`, whitespace bricks on | 2,983,600 | what ships |
+| `from_slice`, whitespace bricks off | 4,218,300 | the bricks are worth **1.41x** here |
+| `from_reader` | 4,637,900 | only **1.10x** behind slice-without-bricks |
+
+So of the 1.55x ceiling, roughly **1.41x is the missing slice scanners and only
+1.10x is the per-byte iterator**. That rules out the cheap version of B7: simply
+buffering the bytes while keeping the byte-at-a-time protocol would recover the
+smaller share. To get the ceiling, the buffer has to be a slice the existing
+scanners run over -- which is what the plan specified, and now there is a number
+saying why.
+
+#### A documentation hazard, found on the way
+
+`IoRead::new`'s own documentation says: *"you will want to apply your own
+buffering because serde_json will not buffer the input. See
+`std::io::BufReader`."*
+
+Measured, a `BufReader` makes an in-memory reader **slower, not faster**:
+`citm_catalog` 412 -> 375 MB/s, `twitter` 289 -> 248 MB/s. It adds a second
+per-byte layer on top of one that is already the bottleneck, and there are no
+syscalls for it to amortise.
+
+The advice is right for a `File`, where without it `bytes()` means one `read`
+syscall per byte, and catastrophically so. It is wrong for anything already in
+memory, and the documentation does not distinguish the two cases. That is worth
+fixing regardless of whether B7 is ever built, because it is advice this crate
+gives its users today.
+
+#### S6's gate, answered: the cold paths agree, at every rung
+
+S6's exit test is not a speed bar. It is "cold paths stay correct and do not
+regress; error line/col identity" -- and after four bricks and a SIMD island
+have gone through the scanners, that is the question worth asking.
+
+The timed corpus cannot answer it. S1-S3 contain **no hex escape, no surrogate
+pair, no nesting past a handful of levels, no 400-digit float and no integer
+near the `u64` boundary**. Those are exactly the paths where a byte-identical
+contract breaks without anything noticing.
+
+`tests/s6_cold_paths.rs` puts 130-odd cases through BOTH crates and compares
+everything the contract covers: whether it parsed, the printed bytes, and for a
+failure the error text WITH its line and column.
+
+| group | what it covers |
+|---|---|
+| deep nesting | arrays and objects at 1, 2, 31, 32, 33, 63, 64, 100, 126, 127, **128**, 129, 200, 500 -- straddling serde_json's default 128-frame recursion limit, so the limit itself must match |
+| escape-heavy strings | an escape every seven bytes over 20,000 groups, all eight two-character escapes |
+| hex escapes | 3,500 BMP escapes across the 1, 2 and 3-byte UTF-8 boundaries |
+| surrogate pairs | 2,000 well-formed pairs, plus lone high, lone low, high-then-high, high-then-bad-escape, truncated hex, non-hex digits, high-at-EOF |
+| number boundaries | `u64::MAX` and +1, `i64::MIN` and -1, `-0`, `-0.0`, `1e308`, `1e309`, `1e-400`, 20-digit exponents both signs, and 400-digit fraction / integer / with-exponent |
+| duplicate keys | last-wins, and the same key 5,000 times |
+| structural churn | nested empties, 5,000 empty arrays, 5,000 empty objects |
+| **error positions** | 28 malformed inputs including newline, tab and CRLF line counting, a 200-byte whitespace run before the error, and mixed whitespace before the error |
+
+**Result: no divergence. 7 suites, 0 failures, at all four `RJT_ISA` rungs
+(`scalar`, `swar`, `sse2`, `avx2`) and with the whitespace fast path both on
+and off.**
+
+The error-position group is the one that earns its keep here. A wide whitespace
+scanner that miscounts lines is **invisible** until an error has to name one --
+the output is byte-identical on every valid document, so the oracle and the
+soak would both pass. The "200-byte whitespace run then error" and "mixed
+whitespace then error" cases exist specifically to catch that, and they are run
+at every rung because the rung is what changes the scanner. CI now does the
+same.
+
+This is the first thing in the project measured against S6's actual bar, and
+the honest reading is that it found nothing -- which for a correctness gate is
+the result you want, and is worth far more than the same suite would be if it
+had never been run.
