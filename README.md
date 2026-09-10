@@ -450,6 +450,7 @@ scan, the escape scan and the eight-digit number fold.
 | Linux x86_64 (gnu, musl) | compiled; **full suite tested in CI** |
 | Windows x86_64 | compiled; **full suite tested in CI** |
 | macOS aarch64 | compiled; **full suite tested in CI**, and the per-arch census runs there |
+| Linux aarch64 (gnu) | compiled; **suite, oracle, census and no_std probe run under qemu-user in CI** (correctness only -- a qemu timing is meaningless and none is taken) |
 | Linux aarch64 (musl), Windows aarch64, macOS x86_64 | compiled in CI |
 | `wasm32-wasip1` | **full suite tested under wasmtime**: 249 library tests, the differential oracle over the whole corpus, the soak, and every brick gate |
 | `wasm32-unknown-unknown` (the browser target) | compiled, **and its output bytes are checksum-compared with native** -- see below |
@@ -498,7 +499,7 @@ optimisations. The full argument is in [`corpus/LEDGER.md`](corpus/LEDGER.md).
 - [ ] **M4** -- the serde fork earns its keep: shared identifier matcher, field-index handshake
 - [ ] **M5** -- the campaign to the G2 speed gates
 - [x] **M6** -- portability: the suite on `wasm32-wasip1`, `no_std` executed rather than checked, a per-arch census, and the browser target's bytes checksum-matched to native (2026-09-10)
-  <br><sub>NEON and simd128 twins are a written, measured note rather than code -- the corpus's 7.2-byte mean whitespace run rules out a 16-byte kernel, and there is no aarch64 hardware to measure one on. Still open: aarch64-Linux is compiled but not tested</sub>
+  <br><sub>NEON and simd128 twins are a written, measured note rather than code -- the corpus's 7.2-byte mean whitespace run rules out a 16-byte kernel, and there is no aarch64 hardware to measure one on. aarch64-Linux runs under qemu-user for correctness</sub>
 - [ ] **M7** -- consumer swap: rusty_time-api, mid, deputy, mata-master
 - [ ] **M8** -- use-protection-please audit, 30 days of fuzzing, v1.0
 

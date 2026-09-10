@@ -2999,9 +2999,23 @@ plus the oracle, the soak and every brick gate on wasm32-wasip1, with the
 checksum that matches native byte for byte on 2.5 MB of strings, floats,
 booleans and nulls.**
 
-What is still open, named rather than left implicit: **aarch64-LINUX is
-compile-checked only.** aarch64 EXECUTION rides on `macos-latest` being Apple
-Silicon -- which the census now prints, so if that ever stops being true the
-coverage does not vanish silently. A Graviton or qemu runner would close it,
-and a qemu one would give correctness without timing, which is all the census
-needs.
+And a qemu-user job for **aarch64-unknown-linux-gnu**, which closes the one
+gap this section named an hour ago. What it adds is not the architecture --
+aarch64 already executes the full suite on `macos-latest`, which is Apple
+Silicon -- but the architecture on a DIFFERENT libc, under a runner that does
+not depend on what `macos-latest` happens to mean this year. It runs the
+library suite, the oracle, the census and the `no_std` probe. qemu gives
+correctness, not timing: **a qemu number is meaningless and none is taken
+there.**
+
+**That job is the one thing in this entry that has not been executed.** There
+is no aarch64 hardware and no qemu here, so it cannot be run on this box; what
+IS verified locally is that the bench crate and the census test target compile
+clean for both `aarch64-unknown-linux-gnu` and `aarch64-unknown-linux-musl`,
+so the only untested part is the linker-and-qemu setup, which is standard. The
+first CI run proves or disproves it, and it is written as a real gate rather
+than a `continue-on-error` one so that a failure is visible.
+
+Still open after that: nothing on the platform list, and the census's own
+`accel`-linked reachability claim, which is weaker than the in-crate one
+because `ESC_STEPS` lives on the wrong side of a crate boundary (above).

@@ -245,6 +245,44 @@ jobs:
           node --version
           cargo test -p rusty_json_turbo-wasmdemo --locked -- --nocapture
 
+  # aarch64-LINUX, EXECUTED rather than compiled. This was M6's one named gap.
+  #
+  # aarch64 already executes the full suite on `macos-latest` (Apple Silicon),
+  # so what this adds is not the architecture -- it is the architecture on a
+  # DIFFERENT libc, under a runner that does not depend on what
+  # `macos-latest` happens to mean this year. qemu-user gives correctness, not
+  # timing: a qemu number is meaningless and no measurement is taken here.
+  # The census is the point -- it asserts the 8-byte SWAR kernels are actually
+  # reached on aarch64, which no output gate can see.
+  aarch64-linux:
+    name: aarch64-unknown-linux-gnu under qemu
+    runs-on: ubuntu-latest
+    env:
+      CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER: aarch64-linux-gnu-gcc
+      CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_RUNNER: qemu-aarch64 -L /usr/aarch64-linux-gnu
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-unknown-linux-gnu
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: aarch64-qemu
+      - run: sudo apt-get update && sudo apt-get install -y qemu-user gcc-aarch64-linux-gnu
+      # `rust-toolchain.toml` pins the toolchain and a target given to the
+      # action lands on `stable` instead -- the same trap the `portable` and
+      # `wasm` jobs document.
+      - run: rustup target add aarch64-unknown-linux-gnu
+      - run: qemu-aarch64 --version
+      - name: The library's own suite, on aarch64
+        run: cargo test -p rusty_json_turbo --locked --target aarch64-unknown-linux-gnu
+      - name: The differential oracle vs upstream, on aarch64
+        run: cargo test -p rusty_json_turbo-bench --locked --target aarch64-unknown-linux-gnu --test oracle
+      - name: The wide kernels are reached on aarch64, and do identical work
+        run: cargo test -p rusty_json_turbo-bench --locked --target aarch64-unknown-linux-gnu --features count-work --test m6_arch_census -- --nocapture
+      - name: The no_std + alloc configuration RUNS on aarch64
+        run: cargo test --manifest-path tests/crate/Cargo.toml --target aarch64-unknown-linux-gnu --no-default-features --features alloc
+
   msrv:
     name: MSRV 1.85
     runs-on: ubuntu-latest
