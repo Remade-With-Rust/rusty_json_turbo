@@ -60,6 +60,26 @@ pub trait Read<'de>: private::Sealed {
         }
     }
 
+    /// If the next eight bytes are all ASCII digits, consume them and return
+    /// their value; otherwise consume nothing and return `None`.
+    ///
+    /// The number path is the whitespace path all over again: `canada.json` is
+    /// **90.1% number bytes** -- 2.03 MB of digits across 111,126 numbers,
+    /// about 17 digits each -- and every one of them goes through a
+    /// `peek_or_null()`, a range test, an overflow check and an `eat_char()`.
+    /// After the whitespace work that file still made 2.19 million `peek` and
+    /// 2.14 million `discard` calls, essentially all of them here.
+    ///
+    /// The caller must only use this while an overflow is impossible for the
+    /// whole chunk, so that the per-digit overflow check it replaces could not
+    /// have fired either. The default implementation declines, which is correct
+    /// for any reader that is not backed by a contiguous buffer.
+    #[doc(hidden)]
+    #[inline]
+    fn take_8_digits(&mut self) -> Option<u32> {
+        None
+    }
+
     /// Position of the most recent call to next().
     ///
     /// The most recent call was probably next() and not peek(), but this method
@@ -699,6 +719,58 @@ fn scan_ws_run(slice: &[u8], from: usize) -> (usize, Option<u8>) {
     scan_ws_scalar(slice, i)
 }
 
+// ---------------------------------------------------------------------------
+// Digit runs.
+// ---------------------------------------------------------------------------
+
+/// Are all eight bytes ASCII digits?
+///
+/// For a digit `c` in `0x30..=0x39`: `c & 0xF0 == 0x30`, and `c + 6` stays
+/// inside `0x36..=0x3F` so `(c + 6) & 0xF0 == 0x30` too, giving `0x33` once the
+/// second nibble is folded down. Any other byte fails its OWN test -- a
+/// non-digit can carry into its neighbour, but it can never rescue itself, so
+/// the chunk is always rejected and a false accept is impossible.
+#[inline(always)]
+fn all_8_digits(chunk: u64) -> bool {
+    const LO: u64 = 0x0606_0606_0606_0606;
+    const HI: u64 = 0xF0F0_F0F0_F0F0_F0F0;
+    const WANT: u64 = 0x3333_3333_3333_3333;
+    ((chunk & HI) | (((chunk.wrapping_add(LO)) & HI) >> 4)) == WANT
+}
+
+/// The value of eight ASCII digits, first character most significant.
+///
+/// The standard three-multiply fold (as in fast_float and simdjson). `chunk`
+/// must have come from a little-endian load, so the first character is the
+/// lowest byte, and every byte must be a digit -- check [`all_8_digits`] first.
+/// Every step is deliberately WRAPPING. The intermediate products overflow
+/// `u64` by design and the answer is read out of the high half, so plain `*`
+/// would be correct in a release build and **panic in a debug build** -- a
+/// consumer-visible bug that only shows up off the happy path. The unit test
+/// below runs in debug, which is how this was caught.
+#[inline(always)]
+fn eight_digits_value(chunk: u64) -> u32 {
+    const MASK: u64 = 0x0000_00FF_0000_00FF;
+    const MUL1: u64 = 0x000F_4240_0000_0064; // 100 + (1_000_000 << 32)
+    const MUL2: u64 = 0x0000_2710_0000_0001; // 1 + (10_000 << 32)
+    let v = chunk.wrapping_sub(0x3030_3030_3030_3030);
+    let v = v.wrapping_mul(10).wrapping_add(v >> 8);
+    let lo = (v & MASK).wrapping_mul(MUL1);
+    let hi = ((v >> 16) & MASK).wrapping_mul(MUL2);
+    (lo.wrapping_add(hi) >> 32) as u32
+}
+
+// A FOUR-digit step was built on top of this one, twice, and refuted twice.
+// It is not here, and the reason is a law rather than an accident -- see
+// `parse_decimal` in `de.rs` and brick B4 in `corpus/LEDGER.md`.
+
+/// Is the wide digit scan on? `knobs` builds only.
+#[cfg(feature = "knobs")]
+fn num_wide() -> bool {
+    static V: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *V.get_or_init(|| std::env::var("RJT_NUM_WIDE").map_or(true, |v| v != "0"))
+}
+
 /// Is the wide whitespace scan on? `knobs` builds only.
 #[cfg(feature = "knobs")]
 fn ws_wide() -> bool {
@@ -767,6 +839,30 @@ impl<'a> Read<'a> for SliceRead<'a> {
     fn discard(&mut self) {
         crate::counters::add(&crate::counters::DISCARD, 1);
         self.index += 1;
+    }
+
+    #[inline]
+    fn take_8_digits(&mut self) -> Option<u32> {
+        #[cfg(feature = "knobs")]
+        if !num_wide() {
+            return None;
+        }
+        // No `?`: the crate denies `clippy::question_mark_used`.
+        let Some(window) = self.slice.get(self.index..self.index + 8) else {
+            return None;
+        };
+        let Ok(bytes) = <[u8; 8]>::try_from(window) else {
+            return None;
+        };
+        let chunk = u64::from_le_bytes(bytes);
+        crate::counters::add(&crate::counters::D8_CALLS, 1);
+        if all_8_digits(chunk) {
+            crate::counters::add(&crate::counters::D8_HITS, 1);
+            self.index += 8;
+            Some(eight_digits_value(chunk))
+        } else {
+            None
+        }
     }
 
     #[inline]
@@ -930,6 +1026,12 @@ impl<'a> Read<'a> for StrRead<'a> {
         self.delegate.skip_whitespace()
     }
 
+    #[inline]
+    fn take_8_digits(&mut self) -> Option<u32> {
+        self.delegate.take_8_digits()
+    }
+
+    #[inline]
     fn position(&self) -> Position {
         self.delegate.position()
     }
@@ -1429,6 +1531,83 @@ mod ws_tests {
             buf[10] = b;
             assert_eq!(wide(&buf, 0), 10);
             assert_eq!(scalar(&buf, 0), 10);
+        }
+    }
+}
+
+#[cfg(test)]
+mod digit_tests {
+    use super::{all_8_digits, eight_digits_value};
+    use alloc::format;
+
+    /// What the SWAR fold must agree with, computed the obvious way.
+    fn scalar_value(s: &[u8; 8]) -> u32 {
+        s.iter()
+            .fold(0u32, |acc, &c| acc * 10 + u32::from(c - b'0'))
+    }
+
+    #[test]
+    fn accepts_only_all_digit_chunks() {
+        let digits = *b"12345678";
+        assert!(all_8_digits(u64::from_le_bytes(digits)));
+        // A single non-digit anywhere must reject the chunk. Byte values are
+        // exhaustive, positions are exhaustive.
+        for pos in 0..8 {
+            for b in 0..=255u8 {
+                let mut buf = digits;
+                buf[pos] = b;
+                let want = b.is_ascii_digit();
+                assert_eq!(
+                    all_8_digits(u64::from_le_bytes(buf)),
+                    want,
+                    "byte {b:#04x} at {pos}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn value_matches_scalar_on_every_boundary_and_at_random() {
+        for s in [
+            b"00000000",
+            b"00000001",
+            b"10000000",
+            b"99999999",
+            b"12345678",
+            b"87654321",
+            b"09090909",
+            b"90909090",
+        ] {
+            let chunk = u64::from_le_bytes(*s);
+            assert!(all_8_digits(chunk));
+            assert_eq!(eight_digits_value(chunk), scalar_value(s), "{:?}", s);
+        }
+        // Every digit in every position, the rest zeroes: catches a fold that
+        // weights a position wrongly.
+        for pos in 0..8 {
+            for d in b'0'..=b'9' {
+                let mut buf = *b"00000000";
+                buf[pos] = d;
+                let chunk = u64::from_le_bytes(buf);
+                assert_eq!(
+                    eight_digits_value(chunk),
+                    scalar_value(&buf),
+                    "digit {} at {pos}",
+                    d as char
+                );
+            }
+        }
+        let mut seed = 0x9e37_79b9_7f4a_7c15u64;
+        for _ in 0..20_000 {
+            seed = seed
+                .wrapping_mul(6364136223846793005)
+                .wrapping_add(1442695040888963407);
+            let n = (seed >> 32) % 100_000_000;
+            let s = format!("{n:08}");
+            let buf = <[u8; 8]>::try_from(s.as_bytes()).unwrap();
+            let chunk = u64::from_le_bytes(buf);
+            assert!(all_8_digits(chunk), "{s}");
+            assert_eq!(eight_digits_value(chunk), n as u32, "{s}");
         }
     }
 }

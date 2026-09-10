@@ -379,8 +379,8 @@ fn work(args: &[String]) -> ExitCode {
         alloc_arm::name()
     );
     println!(
-        "{:<14} {:<14} {:>12} {:>12} {:>12} {:>12} {:>12}",
-        "file", "column", "peek", "next", "discard", "ws_runs", "ws_bytes"
+        "{:<14} {:<14} {:>12} {:>12} {:>12} {:>12} {:>12} {:>14}",
+        "file", "column", "peek", "next", "discard", "ws_runs", "ws_bytes", "d8 hit/call"
     );
     let mut seen = Vec::new();
     for (file, column) in &opts.cells {
@@ -419,14 +419,15 @@ fn work(args: &[String]) -> ExitCode {
         }
         let c = turbo::counters::snapshot().since(before);
         println!(
-            "{:<14} {:<14} {:>12} {:>12} {:>12} {:>12} {:>12}",
+            "{:<14} {:<14} {:>12} {:>12} {:>12} {:>12} {:>12} {:>14}",
             file.name(),
             column.name(),
             c.peek,
             c.next,
             c.discard,
             c.ws_runs,
-            c.ws_bytes
+            c.ws_bytes,
+            format!("{}/{}", c.d8_hits, c.d8_calls)
         );
     }
     ExitCode::SUCCESS

@@ -46,6 +46,20 @@ carry their measured numbers and method line, never an adjective.
   and **deterministic work counters** (`rjson-bench work`, library feature
   `profile`) with an `RJT_*` A/B knob (feature `knobs`) so two implementations
   can be compared inside one binary rather than across two code layouts.
+- **Brick B4**: integer and fraction digits are consumed **eight at a time** --
+  one 8-byte load, three integer ops to validate, a three-multiply fold -- while
+  the significand is below a bound at which eight more digits provably cannot
+  overflow a `u64`; below that bound the chunk takes exactly the branch the
+  byte-at-a-time loop would have taken, so the result is byte-identical
+  including the digit at which a long number switches to the slow float path.
+  Measured in one binary with one env var between the arms, 21 pairs, ABBA,
+  pinned: `canada` struct parse **1.083x** (21/21), DOM parse **1.043x**
+  (19/21), `citm_catalog` struct parse 1.017x (17/21), `twitter` at the floor --
+  the gradient is the corpus census read back, and nine control cells stayed
+  inside 1%. A **four-digit** step on top of it was built twice and reverted
+  twice: at the fraction call site it hits 99.91% of the time and removes a
+  third of `canada`'s `peek` calls, and is still 2.5% slower, because the fold
+  has a fixed cost that does not shrink with width. See `corpus/LEDGER.md`.
 - **Brick B1s**: the whitespace scan now takes eight bytes per step (SWAR, exact
   zero-byte test), with a four-byte scalar peel so a short run never reaches the
   wide path and an `inline(always)` entry so "no whitespace here" stays one load

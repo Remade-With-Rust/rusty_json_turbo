@@ -28,6 +28,18 @@ v1.0.151 tag plus four commits that change no behaviour: remove the deprecated
 pins crates.io **1.0.151** (the tag), so those four commits are themselves under the
 gate and it passes.
 
+### `src/de.rs`, `src/read.rs` -- eight digits per step (brick B4)
+
+`parse_integer` and `parse_decimal` consume eight ASCII digits per iteration via
+a new sealed-trait method `Read::take_8_digits`, whose trait default returns
+`None` so every reader that does not implement it keeps upstream's exact
+byte-at-a-time behaviour. The chunk runs only while the significand is at or
+below `SAFE_8_DIGIT_SIGNIFICAND`, the largest value for which eight more digits
+cannot overflow a `u64`, so the per-digit `overflow!` check provably could not
+have fired over that span. Output, errors and float bits are unchanged and the
+oracle gates it. There is deliberately **no four-digit variant**; the comment in
+`parse_decimal` records why, and `corpus/LEDGER.md` records the measurements.
+
 ## Known inherited exceptions (not divergences, tracked)
 
 - `serde_stacker` (dev-dependency) pulls `psm`, which compiles C. Dev-only, never

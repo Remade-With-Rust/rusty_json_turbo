@@ -1,0 +1,16 @@
+﻿pinvs: null_a=F:\coding\rusty_json_turbo\target\b-knobs\release\rjson-bench.exe (69E30289AEFD67D5)
+pinvs: null_b=F:\coding\rusty_json_turbo\target\b-knobs\release\rjson-bench.exe (69E30289AEFD67D5)
+pinvs: NULL ARM -- identical binaries, this is the floor
+pinvs: cpu=2 priority=High pairs=21 bench='solo --cell canada,dom-parse --cell canada,struct-parse --cell citm_catalog,struct-parse --cell twitter,dom-parse --cell canada,dom-stringify --arm ours'
+
+| file | column | null_a | null_b | null_a/null_b time (median [min, max]) | wins, z |
+|---|---|---:|---:|---:|---:|
+| canada | dom-parse | null_a **253 MB/s** | null_b 257 MB/s | **1.002x** [0.660, 1.085] | 8/21, z = -1.09 |
+| canada | dom-stringify | null_a **972 MB/s** | null_b 965 MB/s | **0.998x** [0.836, 1.051] | 12/21, z = +0.65 |
+| canada | struct-parse | null_a **589 MB/s** | null_b 591 MB/s | **1.003x** [0.786, 1.041] | 10/21, z = -0.22 |
+| citm_catalog | struct-parse | null_a **1,348 MB/s** | null_b 1,354 MB/s | **1.002x** [0.886, 1.025] | 10/21, z = -0.22 |
+| twitter | dom-parse | null_a **365 MB/s** | null_b 365 MB/s | **1.004x** [0.831, 1.173] | 10/21, z = -0.22 |
+
+method: PROCESS-level paired A/B between two binaries (a global allocator is one per program, so it cannot be an in-process arm); each binary reports its own per-cell time via json-bench solo so process launch is outside the number; leading binary alternated per pair (ABBA); pairs=21; statistic=min per-iteration time in each arm-sample window; verdict=median of paired ratios + paired wins with z; pinned=cpu2/High, affinity read back per run; work parity: output/input bytes asserted equal per cell per pair; machine=Intel64 Family 6 Model 183 Stepping 1, GenuineIntel
+A: BINARY|system|false|uncommitted|windows|x86_64
+B: BINARY|system|false|uncommitted|windows|x86_64

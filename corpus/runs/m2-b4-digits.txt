@@ -1,0 +1,26 @@
+﻿pinvs: scalar_digits=target/b-knobs/release/rjson-bench.exe (30AC73E691494371)
+pinvs: wide_digits=target/b-knobs/release/rjson-bench.exe (30AC73E691494371)
+pinvs: NULL ARM -- identical binaries, this is the floor
+pinvs: cpu=2 priority=High pairs=21 bench='solo --all --cell twitter,scan --cell citm_catalog,scan --cell canada,scan --arm ours'
+
+| file | column | scalar_digits | wide_digits | scalar_digits/wide_digits time (median [min, max]) | wins, z |
+|---|---|---:|---:|---:|---:|
+| canada | dom-parse | scalar_digits **296 MB/s** | wide_digits 309 MB/s | **1.043x** [0.939, 1.153] | 2/21, z = -3.71 |
+| canada | dom-stringify | scalar_digits **984 MB/s** | wide_digits 986 MB/s | **0.999x** [0.958, 1.092] | 11/21, z = +0.22 |
+| canada | scan | scalar_digits **1,172 MB/s** | wide_digits 1,180 MB/s | **1.010x** [0.937, 1.162] | 7/21, z = -1.53 |
+| canada | struct-parse | scalar_digits **555 MB/s** | wide_digits 604 MB/s | **1.083x** [1.032, 1.153] | 0/21, z = -4.58 |
+| canada | struct-stringify | scalar_digits **688 MB/s** | wide_digits 690 MB/s | **1.001x** [0.961, 1.067] | 8/21, z = -1.09 |
+| citm_catalog | dom-parse | scalar_digits **689 MB/s** | wide_digits 694 MB/s | **1.006x** [0.929, 1.044] | 8/21, z = -1.09 |
+| citm_catalog | dom-stringify | scalar_digits **1,269 MB/s** | wide_digits 1,265 MB/s | **1.003x** [0.958, 1.048] | 9/21, z = -0.65 |
+| citm_catalog | scan | scalar_digits **2,090 MB/s** | wide_digits 2,083 MB/s | **1.004x** [0.962, 1.174] | 9/21, z = -0.65 |
+| citm_catalog | struct-parse | scalar_digits **1,361 MB/s** | wide_digits 1,383 MB/s | **1.017x** [0.945, 1.097] | 4/21, z = -2.84 |
+| citm_catalog | struct-stringify | scalar_digits **2,066 MB/s** | wide_digits 2,071 MB/s | **1.002x** [0.977, 1.198] | 4/21, z = -2.84 |
+| twitter | dom-parse | scalar_digits **357 MB/s** | wide_digits 359 MB/s | **1.008x** [0.953, 1.097] | 6/21, z = -1.96 |
+| twitter | dom-stringify | scalar_digits **1,765 MB/s** | wide_digits 1,747 MB/s | **1.002x** [0.946, 1.069] | 8/21, z = -1.09 |
+| twitter | scan | scalar_digits **1,505 MB/s** | wide_digits 1,503 MB/s | **1.007x** [0.961, 1.102] | 9/21, z = -0.65 |
+| twitter | struct-parse | scalar_digits **786 MB/s** | wide_digits 786 MB/s | **0.991x** [0.938, 1.062] | 12/21, z = +0.65 |
+| twitter | struct-stringify | scalar_digits **1,882 MB/s** | wide_digits 1,890 MB/s | **1.000x** [0.956, 1.034] | 11/21, z = +0.22 |
+
+method: PROCESS-level paired A/B between two binaries (a global allocator is one per program, so it cannot be an in-process arm); each binary reports its own per-cell time via json-bench solo so process launch is outside the number; leading binary alternated per pair (ABBA); pairs=21; statistic=min per-iteration time in each arm-sample window; verdict=median of paired ratios + paired wins with z; pinned=cpu2/High, affinity read back per run; work parity: output/input bytes asserted equal per cell per pair; machine=Intel64 Family 6 Model 183 Stepping 1, GenuineIntel
+A: BINARY|system|false|uncommitted|windows|x86_64
+B: BINARY|system|false|uncommitted|windows|x86_64

@@ -1,0 +1,23 @@
+﻿pinvs: eight_only=F:\coding\rusty_json_turbo\target\b-knobs\release\rjson-bench.exe (69E30289AEFD67D5)
+pinvs: eight_plus_four=F:\coding\rusty_json_turbo\target\b-knobs\release\rjson-bench.exe (69E30289AEFD67D5)
+pinvs: NULL ARM -- identical binaries, this is the floor
+pinvs: cpu=2 priority=High pairs=61 bench='solo --cell canada,dom-parse --cell canada,struct-parse --cell canada,dom-stringify --cell canada,struct-stringify --arm ours'
+
+| file | column | eight_only | eight_plus_four | eight_only/eight_plus_four time (median [min, max]) | wins, z |
+|---|---|---:|---:|---:|---:|
+| canada | dom-parse | eight_only **253 MB/s** | eight_plus_four 246 MB/s | **0.977x** [0.887, 1.192] | 51/61, z = +5.25 |
+| canada | dom-stringify | eight_only **951 MB/s** | eight_plus_four 961 MB/s | **1.015x** [0.721, 1.792] | 25/61, z = -1.41 |
+| canada | struct-parse | eight_only **586 MB/s** | eight_plus_four 587 MB/s | **0.995x** [0.571, 1.105] | 35/61, z = +1.15 |
+| canada | struct-stringify | eight_only **691 MB/s** | eight_plus_four 689 MB/s | **1.001x** [0.872, 1.077] | 30/61, z = -0.13 |
+
+| file | column | eight_only best-of-N | eight_plus_four best-of-N | eight_only/eight_plus_four best-of-N |
+|---|---|---:|---:|---:|
+| canada | dom-parse | 270 MB/s | 263 MB/s | **0.975x** |
+| canada | dom-stringify | 1,028 MB/s | 1,028 MB/s | **1.000x** |
+| canada | struct-parse | 612 MB/s | 625 MB/s | **1.022x** |
+| canada | struct-stringify | 708 MB/s | 706 MB/s | **0.997x** |
+pinvs: wrote corpus\runs\2026-09-09-b4-wide4-probe3.csv
+
+method: PROCESS-level paired A/B between two binaries (a global allocator is one per program, so it cannot be an in-process arm); each binary reports its own per-cell time via json-bench solo so process launch is outside the number; leading binary alternated per pair (ABBA); pairs=61; statistic=min per-iteration time in each arm-sample window; verdict=median of paired ratios + paired wins with z, plus a best-of-N per-arm minimum that noise can only inflate; pinned=cpu2/High, affinity read back per run; work parity: output/input bytes asserted equal per cell per pair; machine=Intel64 Family 6 Model 183 Stepping 1, GenuineIntel
+A: BINARY|system|false|uncommitted|windows|x86_64
+B: BINARY|system|false|uncommitted|windows|x86_64

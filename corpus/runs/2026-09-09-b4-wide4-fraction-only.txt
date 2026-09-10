@@ -1,0 +1,16 @@
+﻿pinvs: eight_only=F:\coding\rusty_json_turbo\target\b-knobs\release\rjson-bench.exe (69E30289AEFD67D5)
+pinvs: eight_plus_four=F:\coding\rusty_json_turbo\target\b-knobs\release\rjson-bench.exe (69E30289AEFD67D5)
+pinvs: NULL ARM -- identical binaries, this is the floor
+pinvs: cpu=2 priority=High pairs=21 bench='solo --cell canada,dom-parse --cell canada,struct-parse --cell citm_catalog,struct-parse --cell twitter,dom-parse --cell canada,dom-stringify --arm ours'
+
+| file | column | eight_only | eight_plus_four | eight_only/eight_plus_four time (median [min, max]) | wins, z |
+|---|---|---:|---:|---:|---:|
+| canada | dom-parse | eight_only **248 MB/s** | eight_plus_four 240 MB/s | **0.968x** [0.918, 1.035] | 15/21, z = +1.96 |
+| canada | dom-stringify | eight_only **942 MB/s** | eight_plus_four 915 MB/s | **0.966x** [0.579, 1.081] | 15/21, z = +1.96 |
+| canada | struct-parse | eight_only **561 MB/s** | eight_plus_four 561 MB/s | **0.984x** [0.931, 1.133] | 16/21, z = +2.40 |
+| citm_catalog | struct-parse | eight_only **1,331 MB/s** | eight_plus_four 1,301 MB/s | **0.995x** [0.927, 1.048] | 14/21, z = +1.53 |
+| twitter | dom-parse | eight_only **349 MB/s** | eight_plus_four 346 MB/s | **0.995x** [0.794, 1.160] | 12/21, z = +0.65 |
+
+method: PROCESS-level paired A/B between two binaries (a global allocator is one per program, so it cannot be an in-process arm); each binary reports its own per-cell time via json-bench solo so process launch is outside the number; leading binary alternated per pair (ABBA); pairs=21; statistic=min per-iteration time in each arm-sample window; verdict=median of paired ratios + paired wins with z; pinned=cpu2/High, affinity read back per run; work parity: output/input bytes asserted equal per cell per pair; machine=Intel64 Family 6 Model 183 Stepping 1, GenuineIntel
+A: BINARY|system|false|uncommitted|windows|x86_64
+B: BINARY|system|false|uncommitted|windows|x86_64

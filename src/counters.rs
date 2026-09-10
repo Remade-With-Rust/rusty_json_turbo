@@ -30,6 +30,10 @@ pub static DISCARD: AtomicU64 = AtomicU64::new(0);
 pub static WS_RUNS: AtomicU64 = AtomicU64::new(0);
 /// Insignificant whitespace bytes skipped.
 pub static WS_BYTES: AtomicU64 = AtomicU64::new(0);
+/// Calls to `Read::take_8_digits`.
+pub static D8_CALLS: AtomicU64 = AtomicU64::new(0);
+/// Calls to `Read::take_8_digits` that consumed eight digits.
+pub static D8_HITS: AtomicU64 = AtomicU64::new(0);
 
 /// A reading of every counter.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -45,6 +49,10 @@ pub struct Counters {
     pub ws_runs: u64,
     /// Insignificant whitespace bytes skipped.
     pub ws_bytes: u64,
+    /// Calls to `take_8_digits`.
+    pub d8_calls: u64,
+    /// Calls to `take_8_digits` that consumed eight digits.
+    pub d8_hits: u64,
 }
 
 /// Read every counter.
@@ -56,12 +64,16 @@ pub fn snapshot() -> Counters {
         discard: DISCARD.load(Ordering::Relaxed),
         ws_runs: WS_RUNS.load(Ordering::Relaxed),
         ws_bytes: WS_BYTES.load(Ordering::Relaxed),
+        d8_calls: D8_CALLS.load(Ordering::Relaxed),
+        d8_hits: D8_HITS.load(Ordering::Relaxed),
     }
 }
 
 /// Zero every counter.
 pub fn reset() {
-    for c in [&PEEK, &NEXT, &DISCARD, &WS_RUNS, &WS_BYTES] {
+    for c in [
+        &PEEK, &NEXT, &DISCARD, &WS_RUNS, &WS_BYTES, &D8_CALLS, &D8_HITS,
+    ] {
         c.store(0, Ordering::Relaxed);
     }
 }
@@ -76,6 +88,8 @@ impl Counters {
             discard: self.discard - earlier.discard,
             ws_runs: self.ws_runs - earlier.ws_runs,
             ws_bytes: self.ws_bytes - earlier.ws_bytes,
+            d8_calls: self.d8_calls - earlier.d8_calls,
+            d8_hits: self.d8_hits - earlier.d8_hits,
         }
     }
 }

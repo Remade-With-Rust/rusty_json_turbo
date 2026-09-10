@@ -138,7 +138,7 @@ of having instruments first.
 | Arena `Value` (additional type) | DOM parse | bump-allocated nodes, flat objects, interned keys — the shape that gives the fastest competitor its 1.5–3.6x DOM lead | planned, v1.x |
 | SIMD string scan | string-heavy input | 16/32-byte twin of the existing 8-byte SWAR quote/backslash/control scan | planned |
 | Escape-mask writer | stringify | per-chunk "needs escape" mask, one write per clean run | planned |
-| 8-digit SWAR integer parse | number-heavy input | validate and convert eight ASCII digits at a time, per-digit tail | planned |
+| **8-digit integer / fraction parse** | number-heavy input | validate and convert eight ASCII digits in one 8-byte load, per-digit tail | ✅ **landed** — see below |
 | Key dispatch + derive handshake | struct parse | length-bucketed match, then a field-index handshake across the serde seam, replacing a linear `memcmp` ladder per key | planned |
 | Buffered reader | `from_reader` | an internal buffer reusing the slice scanners, instead of one iterator call per byte | planned |
 | ASCII fast-path UTF-8 validation | `from_slice` | validate the ASCII run wide, walk only non-ASCII tails | planned |
@@ -167,6 +167,33 @@ machine. `> 1` means the new path is faster; the session's null-arm floor was
 | twitter | scan | 1,472 MB/s | **1,524 MB/s** | **1.042x** |
 | twitter | struct parse | 791 MB/s | **813 MB/s** | **1.036x** |
 | any file | stringify | — | — | 0.997x–1.008x (control, unmoved) |
+
+**Eight digits per step** (`canada.json` is 90.1% number bytes):
+
+| file | workload | before | after | ratio |
+|---|---|---:|---:|---:|
+| canada | struct parse | 555 MB/s | **604 MB/s** | **1.083x** |
+| canada | DOM parse | 296 MB/s | **309 MB/s** | **1.043x** |
+| citm_catalog | struct parse | 1,361 MB/s | **1,383 MB/s** | **1.017x** |
+| twitter | any workload | — | — | at the floor (1.5% number bytes) |
+| stringify ×6, scan ×3 | — | — | — | 0.999x–1.010x (control, unmoved) |
+
+<sub>The gradient across the three files is the corpus census read back:
+`canada` is 90.1% number and moves most, `citm_catalog` is 7.1% and moves a
+little, `twitter` is 1.5% and does not move. Nine control cells stayed inside 1%.
+The step is exact, not approximate — below a bound where eight more digits
+provably cannot overflow a `u64`, the chunk takes the same branch the
+byte-at-a-time loop would have taken, including the digit at which a long number
+switches to the slow float path.</sub>
+
+<sub>**A four-digit step was built on top of it twice and reverted twice**, and
+the second time is the one worth reading. At the fraction call site it hits
+**110,984 times out of 111,080** and removes **a third of `canada`'s `peek`
+calls** — and is still **2.5% slower** (61 pairs, 51 wins, best-of-N agreeing,
+two stringify controls flat). The fold has a fixed cost that does not shrink
+with width: four scalar digit steps are already about as cheap as one fold, so
+break-even sits above four digits. Removed work is not saved time. Full
+evidence in `corpus/LEDGER.md`.</sub>
 
 <sub>Every row above 1.04x won 21 of 21 paired runs. **`canada.json`'s 1.053x is
 not a whitespace result** — that file has 33 whitespace bytes in 2.25 MB. It is

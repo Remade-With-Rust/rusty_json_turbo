@@ -599,3 +599,127 @@ arms, so the two arms cannot differ by code layout.
   external symbol __start___sancov_pcs`). The CI `fuzz` job runs `cargo fuzz
   check` on Linux, and the soak covers the same ground everywhere. Fixing the
   Windows runtime is an open M1 item, not a blocker.
+
+### 2026-09-09 -- M2-B4: eight digits per step (KEPT), four digits per step (REFUTED TWICE)
+
+`canada.json` is **90.1% number bytes** (content census, above). Upstream walks
+a number one byte at a time: `peek`, range-compare, `eat_char`,
+`significand * 10 + digit`, `overflow!`. The brick takes eight digit bytes in
+one 8-byte load, validates them in three integer ops, and folds them to a `u32`
+with three multiplies.
+
+The change is exact rather than approximate, which is what lets it be
+byte-identical. `SAFE_8_DIGIT_SIGNIFICAND = (u64::MAX - 99_999_999) / 100_000_000`
+is the largest significand for which eight more digits provably cannot overflow
+a `u64`. Below that bound the per-digit `overflow!` check cannot fire, so the
+chunk takes exactly the branch the byte-at-a-time loop would have taken --
+including the digit at which a long number gives up and switches to the slow
+float path. Above it, the loop falls back to bytes.
+
+#### The eight-digit step: KEPT
+
+Same binary, one environment variable between the arms (`RJT_NUM_WIDE=0/1`),
+21 pairs, ABBA, pinned cpu2/High. Raw: `corpus/runs/m2-b4-digits.txt`.
+
+| file | column | scalar | eight-at-a-time | ratio | wins, z |
+|---|---|---:|---:|---:|---:|
+| canada | struct-parse | 555 MB/s | **604 MB/s** | **1.083x** | 21/21, z = 4.58 |
+| canada | dom-parse | 296 MB/s | **309 MB/s** | **1.043x** | 19/21, z = 3.71 |
+| citm_catalog | struct-parse | 1,361 MB/s | **1,383 MB/s** | **1.017x** | 17/21, z = 2.84 |
+| twitter | dom-parse | 357 MB/s | 359 MB/s | 1.008x | at the floor |
+| citm_catalog | dom-parse | 689 MB/s | 694 MB/s | 1.006x | at the floor |
+| **stringify x6 + scan x3 (control)** | | | | **0.999x-1.010x** | **unmoved** |
+
+The gradient is the corpus census read back: `canada` is 90.1% number and moves
+most, `citm_catalog` is 7.1% number and moves a little, `twitter` is 1.5% number
+and does not move. Nine control cells that the change cannot reach stayed
+inside 1%.
+
+Hit rate, counted rather than assumed (`rjson-bench work`, `--features
+turbo/profile`): **108,878 hits in 331,084 calls** on `canada`, a third. The
+two-thirds that miss are the loop's exit test, which is the cost of finding the
+end of a number and is charged to the winning arm above.
+
+#### The four-digit step: REFUTED, twice, and the second time is the useful one
+
+The obvious follow-on is a four-digit step for the remainder a chunked loop
+leaves behind. It was built twice and reverted twice.
+
+**First attempt, at both digit call sites.** `canada` dom-parse 0.967x and
+struct-parse 0.964x against eight-only; `citm_catalog` flat.
+Raw: `corpus/runs/m2-b4-eight-vs-eightfour.txt`. Against scalar, the combined
+step measured `canada` struct-parse **1.035x where eight-only measured 1.083x**
+-- it gave back more than half the win.
+
+The first explanation was that the *integer* call site can essentially never
+succeed: a short integer part is followed by `.`, `e`, `,` or `}`, so all
+111,126 checks there are pure cost. That explanation predicted the fraction-only
+placement would win.
+
+**Second attempt, at the fraction call site only.** The prediction was wrong,
+and being wrong is the finding. Counters first:
+
+| `canada` dom-parse | four-digit step off | four-digit step on, fraction site only |
+|---|---:|---:|
+| `peek` calls | 1,323,297 | **879,361** (-33.5%) |
+| four-digit hits / calls | 0 / 0 | **110,984 / 111,080 (99.91%)** |
+
+The check hits essentially every time, exactly as predicted, and removes a third
+of the file's `peek` calls. It is still slower.
+
+Clock, 61 pairs, same binary, one environment variable, **two stringify controls
+the change cannot reach**. Raw: `corpus/runs/2026-09-09-b4-wide4-probe3.txt`,
+per-pair times in the `.csv` beside it.
+
+| `canada` cell | median ratio | wins, z | best-of-N |
+|---|---:|---:|---:|
+| dom-parse (target) | **0.977x** | 51/61, z = +5.25 | **0.975x** |
+| struct-parse (target) | 0.995x | 35/61, z = +1.15 | 1.022x |
+| dom-stringify (control) | 1.015x | 25/61, z = -1.41 | 1.000x |
+| struct-stringify (control) | 1.001x | 30/61, z = -0.13 | 0.997x |
+
+Both statistics agree on dom-parse and both controls are flat on both. The
+four-digit step is 2.5% slower on the file it was built for, while doing
+demonstrably less work.
+
+#### The law this bought
+
+The fold has a **fixed cost that does not shrink with width**. Four digits of
+the scalar loop are four dependent `significand * 10 + digit` steps on bytes
+already in L1 behind a perfectly predicted branch -- roughly sixteen cycles of
+dependency chain. The four-digit chunk is a load, a validate and a multiply fold
+-- roughly the same. Eight digits are thirty-two cycles of scalar against that
+same fixed fold, which is why the eight-digit step wins 1.083x and its
+four-digit sibling gives half of that back.
+
+**A chunk step pays only when the scalar work it replaces exceeds the fold's
+fixed cost. Break-even on this core is above four digits.** That is why B1s'
+whitespace scan peels four bytes scalar before going wide, and it is the same
+number from the other direction. Two bricks, one boundary.
+
+And the discipline: **removed work is not saved time**. 443,936 `peek` calls
+removed, a 99.91% hit rate, and a slower parser. A counter proves an arm did
+less. Only the clock decides whether it took less time, and only against a
+control the change cannot touch.
+
+#### What this session's runs cost, recorded so it is not re-paid
+
+Two of the four runs above were **inadmissible and thrown away**, both for the
+same reason.
+
+- The 21-pair fraction-only run read `canada` dom-parse 0.968x -- and its
+  `canada` dom-stringify **control** read 0.966x. Stringify does not parse
+  numbers. When a control moves as far as the target, the run's floor is the
+  control's movement and the run cannot resolve the claim. The box had been
+  between 13% and 100% load for ten minutes.
+- The first both-sites run had **no control cell at all**: every cell in it was
+  a parse cell. Its shape looked clean only because `citm_catalog` happens to be
+  number-poor.
+
+The fix was an instrument, not patience -- this box does not go quiet on demand.
+`tools/pinvs.ps1` now takes `-Csv` and prints a **best-of-N** table beside the
+median of paired ratios. Noise can only inflate a timing sample, never deflate
+one, so the minimum over N pairs is the least-contaminated estimate each arm has
+of itself. On a machine that will not settle, run more pairs and read both
+statistics: when they agree, and the controls are flat on both, the result
+stands.

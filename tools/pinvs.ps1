@@ -31,7 +31,14 @@ param(
     # layout, one knob between them. That is strictly better than comparing two
     # builds, where the layout difference alone has measured +-13%.
     [string]$EnvA = "",
-    [string]$EnvB = ""
+    [string]$EnvB = "",
+    # Dump every pair's per-arm time. On a machine that will not go quiet the
+    # median of paired ratios is contaminated -- noise adds time to whichever
+    # arm it lands on, and with 21 pairs it does not average out. The raw times
+    # let a best-of-N verdict be taken instead: noise can only INFLATE a
+    # sample, never deflate one, so the minimum over N pairs is the least
+    # contaminated estimate each arm has of itself.
+    [string]$Csv = ""
 )
 
 $ErrorActionPreference = 'Stop'
@@ -145,11 +152,39 @@ foreach ($cell in ($ratios.Keys | Sort-Object)) {
         $parts[0], $parts[1], $LabelA, $mbsA, $LabelB, $mbsB, $medR, $lo, $hi, $wins, $n, $z)
 }
 Emit ""
+Emit "| file | column | $LabelA best-of-N | $LabelB best-of-N | $LabelA/$LabelB best-of-N |"
+Emit "|---|---|---:|---:|---:|"
+foreach ($cell in ($ratios.Keys | Sort-Object)) {
+    $bestA = ($timesA[$cell] | Measure-Object -Minimum).Minimum
+    $bestB = ($timesB[$cell] | Measure-Object -Minimum).Minimum
+    $parts = $cell -split '/'
+    Emit ("| {0} | {1} | {2:N0} MB/s | {3:N0} MB/s | **{4:N3}x** |" -f `
+        $parts[0], $parts[1], ($bytes[$cell] / $bestA * 1e3), ($bytes[$cell] / $bestB * 1e3), ($bestA / $bestB))
+}
+
+if ($Csv) {
+    $dir = Split-Path -Parent $Csv
+    if ($dir -and -not (Test-Path $dir)) { New-Item -ItemType Directory -Path $dir | Out-Null }
+    $rowsOut = New-Object System.Collections.Generic.List[string]
+    $rowsOut.Add("pair,file,column,arm,min_ns,bytes")
+    foreach ($cell in ($ratios.Keys | Sort-Object)) {
+        $parts = $cell -split '/'
+        for ($k = 0; $k -lt $timesA[$cell].Count; $k++) {
+            $rowsOut.Add(("{0},{1},{2},{3},{4},{5}" -f ($k + 1), $parts[0], $parts[1], $LabelA, $timesA[$cell][$k], $bytes[$cell]))
+            $rowsOut.Add(("{0},{1},{2},{3},{4},{5}" -f ($k + 1), $parts[0], $parts[1], $LabelB, $timesB[$cell][$k], $bytes[$cell]))
+        }
+    }
+    $rowsOut | Out-File -FilePath $Csv -Encoding utf8
+    Emit "pinvs: wrote $Csv"
+}
+
+Emit ""
 Emit ("method: PROCESS-level paired A/B between two binaries (a global allocator is one per program, " +
       "so it cannot be an in-process arm); each binary reports its own per-cell time via `rjson-bench solo` " +
       "so process launch is outside the number; leading binary alternated per pair (ABBA); pairs=$Pairs; " +
       "statistic=min per-iteration time in each arm-sample window; verdict=median of paired ratios + paired " +
-      "wins with z; pinned=cpu$Cpu/High, affinity read back per run; work parity: output/input bytes asserted " +
+      "wins with z, plus a best-of-N per-arm minimum that noise can only inflate; " +
+      "pinned=cpu$Cpu/High, affinity read back per run; work parity: output/input bytes asserted " +
       "equal per cell per pair; machine=$env:PROCESSOR_IDENTIFIER")
 Emit "A: $binaryA"
 Emit "B: $binaryB"
