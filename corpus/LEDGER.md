@@ -1296,3 +1296,77 @@ less time.** What the counters are genuinely good for is the other question --
 whether a fast path is plugged in at all, which no output gate can answer -- and
 for pricing a brick *before* it is built, which is what killed B10 for the cost
 of one histogram instead of a day's work.
+
+### 2026-09-10 -- M3 opens with an instrument bug that would have built the wrong kernel
+
+M3 is the SIMD island: SSE2 and AVX2 twins of the scalar kernels, behind
+runtime dispatch. Before opening an `unsafe` crate for it, the question is
+which kernel and at what width. The probe already had a table for exactly
+that, and the table was wrong.
+
+#### The impossible number
+
+`rjson-bench probe` reported, for `citm_catalog`, that **92.4% of whitespace
+bytes lie in runs of at least 32 bytes** -- in the same table that reported the
+**longest run in the file is 29**. Both cannot be true.
+
+The cause: `ws_bytes_in_runs_of_at_least(32)` answered by summing the bucketed
+histogram from the `17-32` bucket upward. That bucket is mostly runs SHORTER
+than 32, so the function reported ">= 17" under the label ">= 32", and every
+threshold was shifted one bucket. The fix counts the thresholds exactly, from
+the run lengths themselves, at census time.
+
+**What it would have cost.** A 32-byte AVX2 whitespace kernel sized on the old
+table would have been justified by "92.4% of the bytes are in runs long enough
+to fill a step". The true figure is **0.0%** -- no whitespace run in the entire
+corpus reaches 32 bytes. That kernel would have been written, tested, wrapped
+in `unsafe`, and never once fully utilised.
+
+Corrected, and self-consistent with the longest-run column:
+
+| file | >=4 | >=8 | >=16 | >=32 | >=64 | longest |
+|---|---:|---:|---:|---:|---:|---:|
+| citm_catalog | 97.9% | 97.9% | **92.4%** | **0.0%** | 0.0% | 29 |
+| twitter | 91.9% | 79.5% | **4.2%** | 0.0% | 0.0% | 21 |
+| canada | 20.8% | 0.0% | 0.0% | 0.0% | 0.0% | 5 |
+
+#### And a second instrument, because the first answers the wrong question
+
+"How often is a step fully used" is not "how many steps get taken", and for
+sizing a kernel it is the second that matters: **a wide load that overshoots
+the end of a run still resolves it in one iteration**. A 29-byte run never
+fills a 32-byte step and is still finished by one.
+
+So the probe now also reports steps taken, per step size, after the shipped
+4-byte scalar peel:
+
+| file | 8 B (shipped) | 16 B (SSE2) | 32 B (AVX2) | gain vs 8 B |
+|---|---:|---:|---:|---:|
+| citm_catalog | 140,381 | 95,424 | **50,467** | 16 B 1.47x, **32 B 2.78x** |
+| twitter | 16,252 | 15,864 | 15,476 | 16 B 1.02x, **32 B 1.05x** |
+| canada | 1 | 1 | 1 | none |
+
+Both tables are now kept, side by side, because they disagree and the
+disagreement is the point: by the first, AVX2 looks worthless (0% of bytes fill
+a step); by the second, AVX2 cuts `citm_catalog`'s wide-scan steps **2.78x**.
+The second is the one that prices the brick.
+
+#### What this sets up for M3
+
+The whitespace kernel is a **`citm_catalog`-only win** and the corpus says so
+from three directions: 92.4% of its whitespace is in runs of 16 to 29 bytes,
+against `twitter`'s 4.2% and `canada`'s nothing. `twitter` gains 1.05x in steps
+and should be treated as a control, not a target -- exactly the role it played
+for B1s, where an 8-byte step on its 1-byte runs cost 10% before the peel was
+added.
+
+The remaining headroom is real but bounded. On the same run, `citm_catalog`
+scan is 665,800 ns and the same document with skippable whitespace removed is
+311,900 ns, so whitespace handling is **roughly half of what a scan still
+costs** there, and 2.13x is the bound if it were free.
+
+Recorded before the island is opened, so the first kernel is chosen on numbers
+rather than on the appeal of the widest available register. And after three
+refutations in a row -- B4x, B15, and B10 killed at the census -- the step
+count is a price, not a promise: it says the arm will do less work, and only
+the clock decides whether it takes less time.

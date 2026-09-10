@@ -50,10 +50,25 @@ pub struct Content {
     pub ws_bytes_by_len: [usize; 9],
     /// The longest run of skippable whitespace.
     pub longest_ws_run: usize,
+    /// Whitespace bytes lying in runs of at least [`WS_THRESHOLDS`] bytes,
+    /// counted EXACTLY from the run lengths rather than derived from the
+    /// buckets above.
+    ///
+    /// This exists because deriving it from buckets is wrong and the wrongness
+    /// is invisible. The old version answered ">= 32" by summing from the
+    /// "17-32" bucket, so it reported 92.4% of `citm_catalog`'s whitespace in
+    /// runs of at least 32 bytes -- while the same table said the longest run
+    /// in the file was 29. That is the number a 32-byte SIMD kernel would have
+    /// been sized on, and such a kernel would never have fired once.
+    pub ws_bytes_at_least: [usize; WS_THRESHOLDS.len()],
 }
 
 /// Bucket index for a run of `n` bytes, matching [`Content::ws_runs_by_len`].
 pub const WS_BUCKETS: [&str; 9] = ["1", "2", "3", "4", "5-8", "9-16", "17-32", "33-64", "65+"];
+
+/// Run lengths a wide scanner cares about: one step of 4, 8, 16, 32 or 64
+/// bytes only pays if the run is at least that long.
+pub const WS_THRESHOLDS: [usize; 5] = [4, 8, 16, 32, 64];
 
 fn ws_bucket(n: usize) -> usize {
     match n {
@@ -124,20 +139,38 @@ impl Content {
     /// This is the number a wide scan is bounded by: a step of `n` bytes can
     /// only ever accelerate bytes in runs at least that long, and every shorter
     /// run pays the wide path's setup for nothing.
+    /// Wide steps a scanner of step size `step` would take over this file's
+    /// whitespace, after a `peel`-byte scalar prefix.
+    ///
+    /// THE NUMBER THAT ACTUALLY PRICES A WIDE KERNEL, and it is not the same
+    /// question as [`Self::ws_bytes_in_runs_of_at_least`]. That one says how
+    /// often a step is FULLY used; this says how many steps get taken. They
+    /// come apart because a wide load that overshoots the end of a run still
+    /// finds the answer in one step -- no run in this corpus fills 32 bytes,
+    /// and a 32-byte step is still worth having, because it resolves a
+    /// 29-byte run in one iteration where an 8-byte step needs four.
+    ///
+    /// Approximated from the bucket midpoints, so it is a shape not a count;
+    /// it is used to choose a step size, never quoted as a measurement.
+    pub fn wide_steps(&self, step: usize, peel: usize) -> usize {
+        const MID: [usize; 9] = [1, 2, 3, 4, 6, 12, 24, 48, 80];
+        let mut steps = 0;
+        for (i, &runs) in self.ws_runs_by_len.iter().enumerate() {
+            let after_peel = MID[i].saturating_sub(peel);
+            if after_peel > 0 {
+                steps += runs * after_peel.div_ceil(step);
+            }
+        }
+        steps
+    }
+
+    /// Share of whitespace bytes in runs of at least `n`, for `n` in
+    /// [`WS_THRESHOLDS`]. Exact: counted from the run lengths themselves.
     pub fn ws_bytes_in_runs_of_at_least(&self, n: usize) -> f64 {
-        let first = match n {
-            0 | 1 => 0,
-            2 => 1,
-            3 => 2,
-            4 => 3,
-            5..=8 => 4,
-            9..=16 => 5,
-            17..=32 => 6,
-            33..=64 => 7,
-            _ => 8,
+        let Some(i) = WS_THRESHOLDS.iter().position(|&t| t == n) else {
+            return f64::NAN;
         };
-        let part: usize = self.ws_bytes_by_len[first..].iter().sum();
-        Self::pct(part, self.whitespace)
+        Self::pct(self.ws_bytes_at_least[i], self.whitespace)
     }
 }
 
@@ -165,6 +198,11 @@ pub fn census(input: &[u8]) -> Content {
                 let b = ws_bucket(n);
                 c.ws_runs_by_len[b] += 1;
                 c.ws_bytes_by_len[b] += n;
+                for (slot, &t) in c.ws_bytes_at_least.iter_mut().zip(WS_THRESHOLDS.iter()) {
+                    if n >= t {
+                        *slot += n;
+                    }
+                }
             }
             b'{' | b'}' | b'[' | b']' | b',' | b':' => {
                 c.structural += 1;

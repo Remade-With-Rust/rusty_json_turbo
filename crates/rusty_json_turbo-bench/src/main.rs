@@ -829,18 +829,42 @@ fn probe(args: &[String]) -> ExitCode {
         println!(" {:>9.2} {:>9}", c.mean_ws_run(), c.longest_ws_run);
     }
     println!("\nshare of whitespace BYTES in runs of at least N (the wide-scan bound):");
+    print!("{:<14}", "file");
+    for t in content::WS_THRESHOLDS {
+        print!("{:>10}", format!(">={t}"));
+    }
+    println!("{:>10}", "longest");
+    for (f, c) in &censuses {
+        print!("{:<14}", f.name());
+        for t in content::WS_THRESHOLDS {
+            print!("{:>9.1}%", c.ws_bytes_in_runs_of_at_least(t));
+        }
+        println!("{:>10}", c.longest_ws_run);
+    }
+
+    // What a wider step would actually buy, which is NOT what the threshold
+    // table above says. That one bounds how often a step is FULLY USED; this
+    // counts the steps TAKEN, and a wide load that overshoots the end of a run
+    // still resolves it in one iteration.
+    println!("\nwide-scan STEPS over whitespace, by step size (4-byte scalar peel, as shipped):");
     println!(
-        "{:<14} {:>10} {:>10} {:>10} {:>10}",
-        "file", ">=4", ">=8", ">=16", ">=32"
+        "{:<14} {:>12} {:>12} {:>12} {:>12}   vs 8B",
+        "file", "8B (now)", "16B (SSE2)", "32B (AVX2)", "64B"
     );
     for (f, c) in &censuses {
+        let s8 = c.wide_steps(8, 4);
+        let s16 = c.wide_steps(16, 4);
+        let s32 = c.wide_steps(32, 4);
+        let s64 = c.wide_steps(64, 4);
         println!(
-            "{:<14} {:>9.1}% {:>9.1}% {:>9.1}% {:>9.1}%",
+            "{:<14} {:>12} {:>12} {:>12} {:>12}   16B {:.2}x, 32B {:.2}x",
             f.name(),
-            c.ws_bytes_in_runs_of_at_least(4),
-            c.ws_bytes_in_runs_of_at_least(8),
-            c.ws_bytes_in_runs_of_at_least(16),
-            c.ws_bytes_in_runs_of_at_least(32)
+            s8,
+            s16,
+            s32,
+            s64,
+            s8 as f64 / s16.max(1) as f64,
+            s8 as f64 / s32.max(1) as f64
         );
     }
 

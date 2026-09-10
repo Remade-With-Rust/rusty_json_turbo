@@ -1,0 +1,62 @@
+== content census (deterministic; no clock involved)
+
+file                bytes      ws%  struct%  string%  number% n-ascii%   strings   numbers
+twitter            631514    26.1%    10.5%    58.5%     1.6%    15.1%     18099      2109
+citm_catalog      1727204    71.0%     8.5%    12.8%     7.3%     0.0%     26604     14392
+canada            2251051     0.0%     9.9%     0.0%    90.1%     0.0%        12    111126
+
+file            escaped%    mean-str   longest     escape-B     floats   literals-B
+twitter             1.7%        20.4       463         2456          1        21394
+citm_catalog        0.0%         8.3        55            4          0         5052
+canada              0.0%         7.5        17            0     111080            0
+
+whitespace RUNS by length (runs / bytes):
+file                         1               2               3               4             5-8            9-16           17-32           33-64             65+      mean   longest
+twitter          13346/13346         0/0             4/12            0/0          2970/20372     12118/123928      388/6950          0/0             0/0            5.71        21
+citm_catalog     25870/25870         0/0             0/0             0/0            20/100        5490/67498     44957/1133437       0/0             0/0           16.07        29
+canada              16/16            0/0             1/3             0/0             1/5             0/0             0/0             0/0             0/0            1.33         5
+
+share of whitespace BYTES in runs of at least N (the wide-scan bound):
+file                  >=4        >=8       >=16       >=32
+twitter             91.9%      91.9%      79.5%       4.2%
+citm_catalog        97.9%      97.9%      97.9%      92.4%
+canada              20.8%      20.8%       0.0%       0.0%
+
+== ceiling probe: what is left when nothing is built
+
+arm=ours allocator=system rounds=20 window=250 ms  (cell order ROTATED each round, so no cell is always first; per-cell statistic = min over rounds of the min-per-iteration in that round's window)
+
+-- twitter (631514 bytes; 466906 with whitespace removed)
+   scan                   354700 ns     1780 MB/s
+   scan, no ws            264300 ns     1767 MB/s
+   struct-parse           675600 ns      935 MB/s
+   dom-parse             1354900 ns      466 MB/s
+   dom-parse, no ws      1270300 ns      368 MB/s
+   scanning is 26% of dom-parse and 53% of struct-parse
+   CEILING, value construction free : 3.82x on dom-parse
+   CEILING, struct machinery free   : 1.90x on struct-parse
+   CEILING, whitespace skip free    : 1.34x on scan (25% of it), 1.07x on dom-parse (6% of it)
+
+-- citm_catalog (1727204 bytes; 500299 with whitespace removed)
+   scan                   745800 ns     2316 MB/s
+   scan, no ws            344000 ns     1454 MB/s
+   struct-parse          1005500 ns     1718 MB/s
+   dom-parse             2232500 ns      774 MB/s
+   dom-parse, no ws      2052400 ns      244 MB/s
+   scanning is 33% of dom-parse and 74% of struct-parse
+   CEILING, value construction free : 2.99x on dom-parse
+   CEILING, struct machinery free   : 1.35x on struct-parse
+   CEILING, whitespace skip free    : 2.17x on scan (54% of it), 1.09x on dom-parse (8% of it)
+
+-- canada (2251051 bytes; 2251027 with whitespace removed)
+   scan                  1630900 ns     1380 MB/s
+   scan, no ws           1661100 ns     1355 MB/s
+   struct-parse          2854800 ns      789 MB/s
+   dom-parse             5665000 ns      397 MB/s
+   dom-parse, no ws      5618800 ns      401 MB/s
+   scanning is 29% of dom-parse and 57% of struct-parse
+   CEILING, value construction free : 3.47x on dom-parse
+   CEILING, struct machinery free   : 1.75x on struct-parse
+   CEILING, whitespace skip free    : 0.98x on scan (-2% of it), 1.01x on dom-parse (1% of it)
+
+Read these as shares, not as verdicts: the cells run block-wise inside one process (rotated, not paired), so a few percent of drift is expected. A ceiling is used to decide whether a brick is worth BUILDING -- and the arithmetic that matters is share x plausible speedup against the floor.
