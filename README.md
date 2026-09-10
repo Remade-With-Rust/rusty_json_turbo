@@ -133,7 +133,7 @@ of having instruments first.
 |---|---|---|:--:|
 | **Whitespace off the per-byte path** | every token boundary | skip a whitespace run in one walk of the slice instead of a `Result<Option<u8>>` round trip per byte | ✅ **landed** — see below |
 | **Wide whitespace scan** | pretty-printed input | eight bytes per step (SWAR), with a short-run peel and the scalar walk kept as the oracle | ✅ **landed** — see below |
-| **SIMD whitespace scan** | pretty-printed input | an SSE2/AVX2 twin of the above, in a separate crate so the parser never writes `unsafe` | ✅ **landed** — SSE2 ships; AVX2 was built, measured and left switched off (see below) |
+| SIMD whitespace scan | pretty-printed input | an SSE2/AVX2 twin of the above, in a separate crate so the parser never writes `unsafe` | ❌ **built, then switched OFF by default** — measured against *upstream* it loses on 13 of 15 cells. A `#[target_feature]` function cannot be inlined, so reaching the island costs more inlining than the width buys. Reachable with `--features accel`; see `corpus/LEDGER.md` |
 | Bulk `Value` map build | DOM parse | build the map from a sorted vector instead of inserting per entry; reserve on sequences | **promoted** — measured allocation-bound, ~1 alloc per 31 input bytes |
 | Arena `Value` (additional type) | DOM parse | bump-allocated nodes, flat objects, interned keys — the shape that gives the fastest competitor its 1.5–3.6x DOM lead | planned, v1.x |
 | SIMD string scan | string-heavy input | 16/32-byte twin of the existing 8-byte SWAR quote/backslash/control scan | **demoted** — mean string run is 19 bytes, 98.3% already zero-copy, and upstream is already 8-byte SWAR with `memchr2` |
@@ -211,37 +211,43 @@ provably cannot overflow a `u64`, the chunk takes the same branch the
 byte-at-a-time loop would have taken, including the digit at which a long number
 switches to the slow float path.</sub>
 
-**The SIMD island (M3), against the 8-byte scan it replaces.** SSE2 ships;
-AVX2 was built and left switched off.
+**Against upstream serde_json, on the shipping default.** One binary, both
+arms linked, ABBA, 21 pairs, pinned. `> 1` means we are faster.
 
-| file | workload | before | after | ratio |
+| file | workload | upstream | rusty_json_turbo | ratio |
 |---|---|---:|---:|---:|
-| citm_catalog | scan | 2,075 MB/s | **2,297 MB/s** | **1.105x** |
-| s4-media-probe | scan | 1,704 MB/s | **1,873 MB/s** | **1.094x** |
-| citm_catalog | struct parse | 1,321 MB/s | **1,419 MB/s** | **1.075x** |
-| twitter | struct stringify | 2,056 MB/s | **2,165 MB/s** | **1.062x** |
-| twitter | DOM stringify | 1,894 MB/s | **2,012 MB/s** | **1.060x** |
-| citm_catalog | struct stringify | 1,870 MB/s | **1,964 MB/s** | **1.053x** |
-| controls ×2 | — | — | — | 1.001x–1.006x (unmoved) |
+| twitter | struct stringify | 1,503 MB/s | **2,289 MB/s** | **1.53x** |
+| twitter | DOM stringify | 1,386 MB/s | **2,002 MB/s** | **1.43x** |
+| citm_catalog | scan | 1,881 MB/s | **2,294 MB/s** | **1.22x** |
+| citm_catalog | struct parse | 1,405 MB/s | **1,717 MB/s** | **1.22x** |
+| citm_catalog | DOM stringify | 1,125 MB/s | **1,268 MB/s** | **1.14x** |
+| citm_catalog | struct stringify | 1,916 MB/s | **2,134 MB/s** | **1.12x** |
+| citm_catalog | DOM parse | 715 MB/s | **769 MB/s** | **1.09x** |
+| canada | struct parse | 741 MB/s | 764 MB/s | 1.04x |
+| twitter | DOM parse | 452 MB/s | 469 MB/s | 1.04x |
+| canada | struct stringify | 643 MB/s | 661 MB/s | 1.03x |
+| twitter | struct parse | 934 MB/s | 914 MB/s | 0.99x |
 
-<sub>**AVX2 lost and SSE2 won, which is the interesting part.** The 32-byte
-kernel beat the baseline on `citm_catalog` and was *slower* on `twitter`
-(0.958x) and `canada`; the 16-byte kernel beat it on every cell. The longest
-whitespace run anywhere in the corpus is **29 bytes**, so a 32-byte step is
-never fully used, while its costs — a call that cannot inline, a wider tail,
-`vzeroupper` — are paid on every run. The widest register available is not the
-right one, and only the run-length census says so. AVX2 stays in the tree and
-stays reachable through `RJT_ISA=avx2`, so it can be re-measured on a machine
-or a corpus with longer runs rather than deleted on one box's answer.</sub>
+<sub>Every row above 1.09x won 21 of 21 paired runs. The null-arm floor for the
+session was 0.988x–1.018x.</sub>
 
-<sub>The vector code lives in its own crate, `rusty_json_turbo-accel`, with no
-dependencies and no build script, so the parser never writes `unsafe` for a
-vector load. Every kernel is written against a scalar oracle that stays in the
-tree permanently and can be switched on in production with `RJT_ISA=scalar` —
-a fast path whose scalar twin has been deleted cannot be checked. The twins are
-tested against that oracle over all 256 byte values at every offset across the
-8, 16 and 32-byte boundaries, and the byte-identical gate runs at all four
-rungs.</sub>
+<sub>**Two things this table does not claim.** `twitter` DOM parse is 1.04x and
+we wanted 1.8x: DOM parse makes about one allocation per 31 input bytes, short
+strings dominate the count and `BTreeMap` nodes dominate the bytes, and closing
+that needs a different `Value` type rather than another brick. And `twitter`
+struct parse is at parity: a ceiling probe made key dispatch *completely free*
+and bought 0.6%, so the derive is already near-optimal there. Both are written
+up as architectural in `corpus/LEDGER.md`.</sub>
+
+<sub>**The SIMD island was built, measured against upstream, and switched off.**
+Its own A/B had compared two rungs *inside* the island and reported a clean
+1.105x at 61 of 61 wins — while the island was making the crate slower on 13 of
+15 cells. A `#[target_feature]` function cannot be inlined into a caller that
+lacks the feature, so reaching the island puts a non-inlinable call inside the
+whitespace scanner and stops it inlining into the parser's hot loop. The tell
+was `canada`, which holds 33 whitespace bytes in 2.25 MB and still got 1.12x →
+1.34x worse. An A/B is only worth what its baseline is worth, and a baseline
+inside the thing under test is not a baseline.</sub>
 
 <sub>**One honest caveat on the absolute MB/s above.** They were taken before
 the corpus was pinned platform-independent. There was no root `.gitattributes`,

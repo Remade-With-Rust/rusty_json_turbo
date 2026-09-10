@@ -200,9 +200,23 @@ fn first_non_ws_in(slice: &[u8], from: usize) -> usize {
     {
         rusty_json_turbo_accel::first_non_ws(slice, from)
     }
+    // Without the island, the crate's OWN 8-byte SWAR -- not a byte walk. The
+    // island is opt-in now, so this is the path that actually ships, and
+    // handing the reader a scalar loop here would throw away most of what
+    // brick B7 bought.
     #[cfg(not(feature = "accel"))]
     {
         let mut i = from;
+        while let Some(window) = slice.get(i..i + 8) {
+            let Ok(eight) = <[u8; 8]>::try_from(window) else {
+                break;
+            };
+            let m = non_ws_bytes(u64::from_le_bytes(eight));
+            if m != 0 {
+                return i + (m.trailing_zeros() >> 3) as usize;
+            }
+            i += 8;
+        }
         while i < slice.len() && is_ws(slice[i]) {
             i += 1;
         }

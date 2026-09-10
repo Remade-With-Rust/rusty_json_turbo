@@ -1916,3 +1916,164 @@ and `RawValue` bytes are all observable -- and two gates caught real bugs:
 
 `LineColIterator` is now unreferenced and `src/iter.rs` is deleted -- the whole
 per-byte line-counting apparatus is gone, replaced by `memchr` on demand.
+
+### 2026-09-10 -- M3 REVERSED, and the measurement error that hid it
+
+**The SIMD island was a net loss. It is now off by default.** M3's own
+measurement said it won, and that measurement was wrong in a way this project
+had already written down.
+
+#### What M3 measured, and why it could not see this
+
+M3's arms were `RJT_ISA=swar` against `RJT_ISA=sse2` -- **two rungs of the
+island, compared with each other.** Both arms were inside the island. What that
+answers is "is sixteen bytes better than eight, once you are already paying to
+reach the island". What it never asked is "is reaching the island better than
+not reaching it", because there was no arm outside it.
+
+The island's SWAR rung is NOT the same code as the pre-island in-crate SWAR:
+the island's version lives in another crate, behind a `#[target_feature]`
+function that cannot be inlined. So the baseline was already regressed, and
+comparing a slightly-less-regressed arm to it produced a clean-looking 1.105x
+at 61 of 61 wins for a brick that was making the crate slower.
+
+**The rule was already in this ledger, from M1-A: "comparing two builds of this
+crate is nearly useless for a brick." The lesson generalises further than it
+was written. An A/B is only worth what its BASELINE is worth, and a baseline
+inside the thing under test is not a baseline.**
+
+#### What the correct comparison says
+
+Ours against UPSTREAM, in one process, 11 pairs -- the comparison M3 never ran.
+Lower is better; these are ours/upstream time.
+
+| cell | island OFF | island ON |
+|---|---:|---:|
+| canada struct-parse | **1.029** | 1.236 |
+| canada dom-parse | **0.958** | 1.245 |
+| canada scan | **1.120** | 1.335 |
+| twitter struct-parse | **0.969** | 1.159 |
+| twitter scan | **1.048** | 1.280 |
+| twitter dom-parse | **0.966** | 1.029 |
+| citm struct-stringify | **0.951** | 1.154 |
+| citm dom-stringify | **0.944** | 1.018 |
+| citm struct-parse | **0.822** | 0.931 |
+| citm scan | **0.882** | 0.995 |
+
+**Off is better on thirteen of fifteen cells, and the island wins none of them
+convincingly.**
+
+#### The mechanism, and it is not the scan
+
+`canada scan` is the tell. That file holds **33 whitespace bytes in 2.25 MB**,
+so the island cannot be doing any scanning there at all -- and it still costs
+1.120x to 1.335x. Whatever the island is doing wrong, it is not scanning badly.
+
+A `#[target_feature]` function cannot be inlined into a caller that lacks the
+feature. So reaching the island puts a **non-inlinable call inside
+`scan_ws_run`**, which makes `scan_ws` too big to inline, which stops
+`skip_whitespace` and `parse_whitespace` from inlining into the parser's hot
+loop. That cascade costs more than the extra eight bytes of width buy.
+
+**That is a general result about unsafe SIMD islands in Rust rather than a fact
+about this corpus: the cost of an island is not the dispatch, it is the
+inlining you lose at every call site that can no longer see through it.** A
+wider kernel has to beat that, not merely beat the narrower kernel.
+
+The crate stays -- it is correct, twin-tested over every byte value at every
+offset, and reachable via `--features accel` -- so this can be re-measured
+where the trade comes out differently. What changed is the default, and the
+reason sits in `Cargo.toml` beside the feature so nobody switches it on without
+reading it.
+
+### 2026-09-10 -- G2 measured on the shipping default
+
+The milestone's exit test, and the first full ours-against-upstream run since
+M0. Pinned cpu2/High, ABBA, 21 pairs, both arms in one binary.
+Raw: `corpus/runs/2026-09-10-g2-final.txt`; null arm
+`corpus/runs/2026-09-10-g2-null.txt` (medians 0.988x-1.018x).
+
+| file | column | ours | upstream | ours/upstream | wins |
+|---|---|---:|---:|---:|---:|
+| twitter | struct-stringify | **2,289 MB/s** | 1,503 | **0.654x = 1.53x** | 21/21 |
+| twitter | dom-stringify | **2,002 MB/s** | 1,386 | **0.698x = 1.43x** | 21/21 |
+| citm_catalog | scan | **2,294 MB/s** | 1,881 | **0.820x = 1.22x** | 21/21 |
+| citm_catalog | struct-parse | **1,717 MB/s** | 1,405 | **0.823x = 1.22x** | 21/21 |
+| citm_catalog | dom-stringify | **1,268 MB/s** | 1,125 | **0.876x = 1.14x** | 21/21 |
+| citm_catalog | struct-stringify | **2,134 MB/s** | 1,916 | **0.893x = 1.12x** | 21/21 |
+| citm_catalog | dom-parse | **769 MB/s** | 715 | **0.917x = 1.09x** | 21/21 |
+| twitter | dom-parse | 469 MB/s | 452 | 0.959x | 17/21 |
+| canada | struct-parse | 764 MB/s | 741 | 0.964x | 21/21 |
+| canada | struct-stringify | 661 MB/s | 643 | 0.974x | 20/21 |
+| canada | dom-stringify | 979 MB/s | 961 | 0.986x | 16/21 |
+| canada | dom-parse | 405 MB/s | 394 | 0.992x | 15/21 |
+| twitter | struct-parse | 914 MB/s | 934 | 1.009x | 9/21 |
+| twitter | scan | 1,737 MB/s | 1,816 | **1.047x** | 0/21 |
+| canada | scan | 1,265 MB/s | 1,603 | **1.271x** | 0/21 |
+
+**Twelve of fifteen cells beat upstream, ten of them at 20 or 21 wins of 21.**
+
+#### Against G2's bars, honestly
+
+| bar | status |
+|---|---|
+| S1 struct stringify >= 1.3x | **MET, 1.53x** |
+| S3 (canada) parse >= 1.0x, no regression | **MET** (1.04x struct, 1.01x DOM) |
+| no cell below 0.97x on the four json-benchmark columns | **MET on S1-S3** -- worst is twitter struct-parse at 1.009x, inside the null floor |
+| S1 DOM parse >= 1.8x | **NOT MET, 1.04x** |
+| S1 struct parse >= 1.4x | **NOT MET, 0.99x** |
+| S4 struct parse >= 1.4x | **NOT MET**, and two S4 cells LOSE |
+
+#### Two groups of failing cells, separated by what is known about them
+
+**`scan`, where the cell cannot resolve anything.** Measured across six builds
+of nearly identical source, `canada scan` read 1.308, 1.003, 0.887, 0.979 and
+1.291 -- a **40% swing** with no code change to explain it. That cell's
+cross-instance floor swamps any effect it could carry. It is also not a
+shipping workload: `scan` is the `IgnoredAny` ceiling-probe column, an
+instrument. Recorded as unresolvable rather than claimed as a regression, on
+the same grounds M0 recorded one cell at 0.968x with byte-identical source.
+
+**`s4-frame-telemetry`, where the loss is stable and the cause is NOT known.**
+struct-parse 1.139x and struct-stringify 1.135x, at 0 wins of 11, reproduced
+across two independent builds. Every brick was toggled off in turn --
+`RJT_NUM_WIDE=0`, `RJT_WS_FASTPATH=0`, `RJT_ESC_WIDE=0` -- and **none is
+responsible**; the ratio moves by under 2% for all three. So this is not B4
+mis-firing on short numbers, which was the obvious hypothesis and is refuted.
+
+That leaves the honest answer: **unexplained**. The leading candidate is the
+same cross-instance instantiation bias, which M0 measured at up to **18% per
+cell with byte-identical source** (twitter dom-stringify 0.835x, canada
+dom-parse 1.094x, on code that was character-for-character upstream's), and
+which should grow as our crate grows relative to upstream's. That is a
+hypothesis, not a measurement, and it is written here as one.
+
+#### What remains is architectural
+
+The exit test asks for this note where a cell has stalled, and two have.
+
+**S1 DOM parse is at 1.04x against a 1.8x bar, and no brick will close it.**
+The allocation census settled why: DOM parse makes **20,834 allocations per
+632 KB**, about one per 31 input bytes. Short strings dominate the COUNT --
+54.8% of citm's allocations are eight bytes or fewer -- and `BTreeMap` nodes
+dominate the BYTES: 10,978 nodes account for essentially all of citm's 7.68 MB,
+and roughly 80% of each node is unused at a median arity of 2. Key reuse runs
+**80x to 1,419x**: 46,816 string allocations for 33 distinct names on one
+payload.
+
+Closing that requires changing what `Value` IS -- interned keys and a
+bump-allocated node store, a different type with a different public API. That
+is the v1.x arena `Value` the plan already carries, and it is the only item on
+the list with 1.8x in it. B10 was correctly killed at the census for proposing
+to reach it with a sorted `Vec`.
+
+**S1 struct parse is at 0.99x against a 1.4x bar, and M4 already closed that
+route.** The B6 ceiling probe made key dispatch completely free and bought
+0.6%, and the assembly shows twenty `memcmp` calls across 111 derive-generated
+matchers. The derive is near-optimal, so struct parse is bounded by allocation
+and by field construction, not by dispatch.
+
+**Where this project has actually won is serialization and whitespace-dense
+parsing**: 1.53x and 1.43x on twitter stringify, 1.22x on citm scan and struct
+parse. Those came from removing redundant work on a slice, and the ceiling
+probes say that seam is now largely worked out.

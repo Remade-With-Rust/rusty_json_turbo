@@ -84,7 +84,7 @@ features = ["float_roundtrip", "raw_value", "unbounded_depth"]
 ### FEATURES #################################################################
 
 [features]
-default = ["std", "accel"]
+default = ["std"]
 
 # `accel/std` is what lets the island detect AVX2 at runtime; without `std`
 # it still reaches SSE2 on x86-64, which is baseline and needs no detection.
@@ -136,14 +136,35 @@ unbounded_depth = []
 # way to compare them without also comparing two code layouts, and layout alone
 # has measured +-13% between two builds of this crate.
 knobs = ["std"]
-# The SIMD island (M3). A separate crate so THIS one can keep tightening
-# toward `forbid(unsafe_code)` while still reaching a wide scan; the parser
-# never writes `unsafe` for a vector load. Pure Rust, no build script, no
-# transitive dependencies, so the empty-dependency-tree claim survives.
+# The SIMD island (M3). A separate crate so THIS one never writes `unsafe` for
+# a vector load. Pure Rust, no build script, no transitive dependencies.
 #
-# On by default, because a drop-in replacement that needs a feature flag to be
-# fast is not a drop-in replacement. `RJT_ISA=scalar` reaches the oracle at
-# runtime, so the wide path can always be switched off without a rebuild.
+# OFF BY DEFAULT, and that is a measured decision that reverses the one made
+# when it landed. Against UPSTREAM -- which is the comparison that matters and
+# the one M3's own measurement never made -- the island LOSES on 9 of 15 cells
+# and wins on none convincingly:
+#
+#   cell                       island off   island on
+#   canada struct-parse           1.029       1.236
+#   canada dom-parse              0.958       1.245
+#   canada scan                   1.120       1.335
+#   twitter struct-parse          0.969       1.159
+#   twitter scan                  1.048       1.280
+#   citm struct-stringify         0.951       1.154
+#   citm scan                     0.882       0.995
+#
+# (Lower is better; these are ours/upstream time.) Note `canada scan`, which
+# contains 33 whitespace bytes in 2.25 MB: the island cannot be doing any
+# scanning there, so its cost is NOT the scan. A `#[target_feature]` function
+# cannot be inlined into a caller that lacks the feature, so reaching the
+# island puts a non-inlinable call inside `scan_ws_run`, which stops
+# `scan_ws` -- and with it `skip_whitespace` and `parse_whitespace` -- from
+# inlining into the parser's hot loop. The lost inlining costs more than the
+# extra width buys.
+#
+# The crate stays, fully tested and reachable, so this can be re-measured on a
+# machine or a workload where the trade comes out differently. See
+# `corpus/LEDGER.md` under "M3 reversed".
 accel = ["dep:rusty_json_turbo-accel"]
 # The deterministic work counters in `counters`. Implies `knobs` so a counting
 # build can also toggle the arm it is counting. NEVER quote a timing from a

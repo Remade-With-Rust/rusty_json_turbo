@@ -237,13 +237,16 @@ jobs:
           grep -q 'work parity: 2600 frames' b6.txt             || { echo '::error::the B6 probe arms no longer build identical values'; exit 1; }
       - name: Nothing reaches deserialize_in_place (brick B14)
         run: cargo test -p rusty_json_turbo-bench --release --locked --test b14_reachability
+      # The island is OPT-IN now (it lost to upstream on 13 of 15 cells), so
+      # these gates must ask for it explicitly or they would silently test
+      # nothing -- the same silent-skip shape as the `.ndjson` filter bug.
       - name: The SIMD island agrees with its oracle, at every rung
         shell: bash
         run: |
           for isa in scalar swar sse2 avx2; do
             echo "--- RJT_ISA=$isa"
             RJT_ISA=$isa cargo test -p rusty_json_turbo-accel --release --locked
-            RJT_ISA=$isa cargo test -p rusty_json_turbo-bench --release --locked               --test oracle --test soak
+            RJT_ISA=$isa cargo test -p rusty_json_turbo-bench --release --locked               --features turbo/accel --test oracle --test soak
           done
       # The island must also build where there is no x86 at all, falling back
       # to SWAR rather than failing to compile.

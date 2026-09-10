@@ -107,6 +107,32 @@ carry their measured numbers and method line, never an adjective.
   - The fork stays wired and unmodified, with **zero divergences** documented in
     `docs/UPSTREAM-CHANGES.md` and its baseline recorded as the gate any future
     change must clear: 478 passed, 0 failed, 5 ignored at `a874a1b`.
+- **M3 REVERSED: the SIMD island is off by default, and its own measurement was
+  wrong.** M3's A/B compared `RJT_ISA=swar` against `RJT_ISA=sse2` -- two rungs
+  **inside** the island -- and reported 1.105x at 61 of 61 wins. Measured
+  against *upstream*, the comparison it never ran, the island **loses on 13 of
+  15 cells**: `canada` struct parse 1.029x -> 1.236x, `twitter` struct parse
+  0.969x -> 1.159x, `citm_catalog` struct stringify 0.951x -> 1.154x.
+  - The tell is `canada scan`, which holds **33 whitespace bytes in 2.25 MB**
+    and still went 1.120x -> 1.335x. The island cannot be scanning anything
+    there, so its cost is not the scan: a `#[target_feature]` function cannot
+    be inlined into a caller lacking the feature, so reaching the island puts a
+    non-inlinable call inside `scan_ws_run`, which stops `scan_ws` and
+    `parse_whitespace` inlining into the parser's hot loop. **The cost of an
+    unsafe SIMD island is the inlining you lose, not the dispatch you pay.**
+  - **An A/B is only worth what its baseline is worth, and a baseline inside
+    the thing under test is not a baseline.** The crate stays -- correct,
+    twin-tested over every byte value at every offset, reachable with
+    `--features accel` -- so it can be re-measured where the trade differs.
+- **G2 measured on the shipping default**, the first full ours-against-upstream
+  run since M0: **12 of 15 cells beat upstream, ten at 20 or 21 wins of 21.**
+  `twitter` struct stringify **1.53x**, DOM stringify **1.43x**;
+  `citm_catalog` scan and struct parse **1.22x**, DOM stringify 1.14x, struct
+  stringify 1.12x, DOM parse 1.09x. The S1 struct-stringify bar (>= 1.3x) and
+  the S3 no-regression bar are **met**; the S1 DOM-parse (1.8x) and struct-parse
+  (1.4x) bars are **not**, and both are now written up as architectural rather
+  than left open -- DOM parse needs a different `Value` type, and a ceiling
+  probe already showed free key dispatch is worth 0.6%.
 - **M3: the SIMD island.** A new crate, `rusty_json_turbo-accel`, carrying SSE2
   and AVX2 twins of the whitespace and escape scanners. It is the one crate in
   the workspace where `unsafe` is allowed, so the parser itself never writes it
