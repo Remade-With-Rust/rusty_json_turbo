@@ -7,7 +7,7 @@ use core::str;
 
 #[cfg(feature = "std")]
 use crate::io;
-#[cfg(feature = "std")]
+
 #[cfg(feature = "raw_value")]
 use crate::raw::BorrowedRawDeserializer;
 #[cfg(all(feature = "raw_value", feature = "std"))]
@@ -212,8 +212,11 @@ fn first_non_ws_in(slice: &[u8], from: usize) -> usize {
 
 /// Bytes pulled from the reader per refill. Big enough that the per-call cost
 /// disappears, small enough to stay in L1 alongside everything else.
+#[cfg(feature = "std")]
 const IO_CHUNK: usize = 8192;
 
+/// JSON input source that reads from a std::io input stream.
+///
 /// BRICK B7. Upstream held a `LineColIterator<io::Bytes<R>>` -- one
 /// `io::Result<u8>` per byte, wrapped in a per-byte line and column
 /// counter. Measured, `from_reader` was 1.55x slower than `from_slice` on
@@ -224,6 +227,8 @@ const IO_CHUNK: usize = 8192;
 /// Now it holds a window. The bytes are a slice, so the same scanners can
 /// run over them, and the line and column counters are computed only when
 /// an error actually needs them.
+#[cfg(feature = "std")]
+#[cfg_attr(docsrs, doc(cfg(feature = "std")))]
 pub struct IoRead<R>
 where
     R: io::Read,
