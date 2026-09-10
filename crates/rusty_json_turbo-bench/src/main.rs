@@ -60,6 +60,7 @@ fn main() -> ExitCode {
         "latency" => latency(&args[1..]),
         "b6" => b6(&args[1..]),
         "b7" => b7(&args[1..]),
+        "stream" => stream(&args[1..]),
         "diff-oracle" => diff_oracle(&args[1..]),
         "list" => {
             for f in File::EVERY {
@@ -984,6 +985,349 @@ fn b7(args: &[String]) -> ExitCode {
         window_ms,
         file.name(),
         input.len(),
+        turbo::counters::isa(),
+        alloc_arm::name()
+    );
+    ExitCode::SUCCESS
+}
+
+/// One way of reading a stream: given the whole bytes and the pre-sliced
+/// documents, do the work and return the nanoseconds it took.
+type StreamArm = fn(&[u8], &[Vec<u8>]) -> u64;
+
+/// THE S5 STREAM CELL: three ways to read 10,000 documents.
+///
+/// Every other cell in this harness measures throughput on ONE large
+/// document. A log stream is the opposite shape -- 10,000 documents of about
+/// 260 bytes each -- and the two questions come apart, because per-document
+/// setup that vanishes into a 600 KB average dominates a 260-byte line.
+///
+/// Three arms on the same bytes, because the differences between them are the
+/// whole point:
+///
+/// 1. **per-document `from_slice`** -- what a caller does when it has already
+///    split the stream itself. The floor: no stream machinery at all.
+/// 2. **`StreamDeserializer` over a slice** -- serde_json splitting it, with
+///    the whole stream in memory.
+/// 3. **`StreamDeserializer` over a reader** -- the shape a service actually
+///    has, and the one brick B7 rebuilt. **Arm 3 against arm 2 is the plan's
+///    B7 ceiling for streaming**, which no other cell can measure.
+///
+/// Work parity is asserted before timing: all three arms must yield the same
+/// number of documents, and arm 1 and arm 2 must agree value-for-value.
+fn stream(args: &[String]) -> ExitCode {
+    let mut pairs = 15usize;
+    let mut window_ms = 250u64;
+    let mut file = File::S5LogStream;
+    let mut typed = false;
+    let mut i = 0;
+    while i < args.len() {
+        let a = args[i].as_str();
+        i += 1;
+        match a {
+            "--pairs" | "--window-ms" => {
+                let Some(v) = args.get(i).map(String::as_str) else {
+                    eprintln!("error: {a} needs a value");
+                    return ExitCode::from(2);
+                };
+                let Ok(parsed) = v.parse::<u64>() else {
+                    eprintln!("error: {a}: {v:?} is not a number");
+                    return ExitCode::from(2);
+                };
+                if a == "--pairs" {
+                    pairs = parsed as usize;
+                } else {
+                    window_ms = parsed;
+                }
+                i += 1;
+            }
+            "--file" => {
+                let Some(v) = args.get(i).map(String::as_str) else {
+                    eprintln!("error: --file needs a value");
+                    return ExitCode::from(2);
+                };
+                let Some(f) = File::parse(v) else {
+                    eprintln!("error: unknown file {v:?}");
+                    return ExitCode::from(2);
+                };
+                if !f.is_stream() {
+                    eprintln!("error: {} is not a stream file", f.name());
+                    return ExitCode::from(2);
+                }
+                file = f;
+                i += 1;
+            }
+            // Parse into the S5 fixture rather than `Value`: the shape a
+            // service really uses, and the only arm that exercises the
+            // absent-vs-null `trace` field and the nested `Option` in `err`.
+            "--typed" => typed = true,
+            "--pinned" | "--commit" => i += 1,
+            other => {
+                eprintln!("error: unknown option {other:?}");
+                return ExitCode::from(2);
+            }
+        }
+    }
+
+    let bytes = file.load();
+    let docs = corpus::stream_documents(file);
+    if docs.is_empty() {
+        eprintln!("error: {} yielded no documents", file.name());
+        return ExitCode::from(2);
+    }
+
+    // WORK PARITY. A stream file is NOT a document -- `from_slice` on the
+    // whole thing must fail -- and all three arms must see the same documents.
+    {
+        let whole: Result<turbo::Value, _> = turbo::from_slice(&bytes);
+        assert!(
+            whole.is_err(),
+            "{}: the whole file parsed as one document; it is not a stream",
+            file.name()
+        );
+
+        let per_doc: Vec<turbo::Value> = docs
+            .iter()
+            .map(|d| turbo::from_slice(d).expect("a sliced document must parse"))
+            .collect();
+        let streamed: Vec<turbo::Value> = turbo::Deserializer::from_slice(&bytes)
+            .into_iter::<turbo::Value>()
+            .map(|r| r.expect("StreamDeserializer over a slice"))
+            .collect();
+        let from_reader: Vec<turbo::Value> = turbo::Deserializer::from_reader(&bytes[..])
+            .into_iter::<turbo::Value>()
+            .map(|r| r.expect("StreamDeserializer over a reader"))
+            .collect();
+        assert_eq!(
+            per_doc.len(),
+            streamed.len(),
+            "slice arms disagree on count"
+        );
+        assert_eq!(
+            streamed.len(),
+            from_reader.len(),
+            "the reader arm sees a different number of documents"
+        );
+        assert_eq!(per_doc, streamed, "per-document and streamed values differ");
+        assert_eq!(streamed, from_reader, "slice and reader values differ");
+        println!(
+            "work parity: {} documents, mean {} bytes, all three arms equal; \
+             the whole file correctly does NOT parse as one document",
+            docs.len(),
+            bytes.len() / docs.len()
+        );
+    }
+
+    let window = Duration::from_millis(window_ms);
+    let total = bytes.len();
+
+    macro_rules! arm {
+        ($name:ident, $body:expr) => {
+            fn $name(bytes: &[u8], docs: &[Vec<u8>]) -> u64 {
+                let t = Instant::now();
+                let n = $body(bytes, docs);
+                let ns = t.elapsed().as_nanos() as u64;
+                std::hint::black_box(n);
+                ns
+            }
+        };
+    }
+    arm!(per_doc_value, |_b: &[u8], docs: &[Vec<u8>]| {
+        let mut n = 0usize;
+        for d in docs {
+            let v = turbo::from_slice::<turbo::Value>(d).unwrap();
+            std::hint::black_box(&v);
+            n += 1;
+        }
+        n
+    });
+    arm!(stream_slice_value, |b: &[u8], _d: &[Vec<u8>]| {
+        turbo::Deserializer::from_slice(b)
+            .into_iter::<turbo::Value>()
+            .map(Result::unwrap)
+            .count()
+    });
+    arm!(stream_reader_value, |b: &[u8], _d: &[Vec<u8>]| {
+        turbo::Deserializer::from_reader(b)
+            .into_iter::<turbo::Value>()
+            .map(Result::unwrap)
+            .count()
+    });
+    arm!(per_doc_typed, |_b: &[u8], docs: &[Vec<u8>]| {
+        let mut n = 0usize;
+        for d in docs {
+            let v = turbo::from_slice::<rjt_bench::s5_log_stream::LogRecord>(d).unwrap();
+            std::hint::black_box(&v);
+            n += 1;
+        }
+        n
+    });
+    arm!(stream_slice_typed, |b: &[u8], _d: &[Vec<u8>]| {
+        turbo::Deserializer::from_slice(b)
+            .into_iter::<rjt_bench::s5_log_stream::LogRecord>()
+            .map(Result::unwrap)
+            .count()
+    });
+    arm!(stream_reader_typed, |b: &[u8], _d: &[Vec<u8>]| {
+        turbo::Deserializer::from_reader(b)
+            .into_iter::<rjt_bench::s5_log_stream::LogRecord>()
+            .map(Result::unwrap)
+            .count()
+    });
+
+    // UPSTREAM TWINS. G2's bar is stated against upstream, and no other cell
+    // in this harness can measure a stream, so the comparison has to live
+    // here. The reader arm is the one brick B7 rebuilt, and upstream's still
+    // pulls one `io::Result<u8>` per byte through a per-byte line counter --
+    // so `ours reader / upstream reader` is what B7 is worth on a stream.
+    arm!(up_per_doc_value, |_b: &[u8], docs: &[Vec<u8>]| {
+        let mut n = 0usize;
+        for d in docs {
+            let v = serde_json_upstream::from_slice::<serde_json_upstream::Value>(d).unwrap();
+            std::hint::black_box(&v);
+            n += 1;
+        }
+        n
+    });
+    arm!(up_stream_slice_value, |b: &[u8], _d: &[Vec<u8>]| {
+        serde_json_upstream::Deserializer::from_slice(b)
+            .into_iter::<serde_json_upstream::Value>()
+            .map(Result::unwrap)
+            .count()
+    });
+    arm!(up_stream_reader_value, |b: &[u8], _d: &[Vec<u8>]| {
+        serde_json_upstream::Deserializer::from_reader(b)
+            .into_iter::<serde_json_upstream::Value>()
+            .map(Result::unwrap)
+            .count()
+    });
+    arm!(up_per_doc_typed, |_b: &[u8], docs: &[Vec<u8>]| {
+        let mut n = 0usize;
+        for d in docs {
+            let v =
+                serde_json_upstream::from_slice::<rjt_bench::s5_log_stream::LogRecord>(d).unwrap();
+            std::hint::black_box(&v);
+            n += 1;
+        }
+        n
+    });
+    arm!(up_stream_slice_typed, |b: &[u8], _d: &[Vec<u8>]| {
+        serde_json_upstream::Deserializer::from_slice(b)
+            .into_iter::<rjt_bench::s5_log_stream::LogRecord>()
+            .map(Result::unwrap)
+            .count()
+    });
+    arm!(up_stream_reader_typed, |b: &[u8], _d: &[Vec<u8>]| {
+        serde_json_upstream::Deserializer::from_reader(b)
+            .into_iter::<rjt_bench::s5_log_stream::LogRecord>()
+            .map(Result::unwrap)
+            .count()
+    });
+
+    let upstream_arms: [StreamArm; 3] = if typed {
+        [
+            up_per_doc_typed,
+            up_stream_slice_typed,
+            up_stream_reader_typed,
+        ]
+    } else {
+        [
+            up_per_doc_value,
+            up_stream_slice_value,
+            up_stream_reader_value,
+        ]
+    };
+
+    let arms: [(&str, StreamArm); 3] = if typed {
+        [
+            ("per-document from_slice", per_doc_typed),
+            ("StreamDeserializer / slice", stream_slice_typed),
+            ("StreamDeserializer / reader", stream_reader_typed),
+        ]
+    } else {
+        [
+            ("per-document from_slice", per_doc_value),
+            ("StreamDeserializer / slice", stream_slice_value),
+            ("StreamDeserializer / reader", stream_reader_value),
+        ]
+    };
+
+    let sample = |f: StreamArm| -> u64 {
+        let start = Instant::now();
+        let mut best = u64::MAX;
+        let mut n = 0;
+        loop {
+            best = best.min(f(&bytes, &docs));
+            n += 1;
+            if n >= 3 && start.elapsed() >= window {
+                break;
+            }
+        }
+        best
+    };
+
+    let mut ns: [Vec<u64>; 3] = [Vec::new(), Vec::new(), Vec::new()];
+    let mut up: [Vec<u64>; 3] = [Vec::new(), Vec::new(), Vec::new()];
+    for p in 0..pairs {
+        // Rotate which arm leads, so none is always cold, and alternate which
+        // crate goes first so drift cannot settle on one of them.
+        for k in 0..3 {
+            let idx = (k + p) % 3;
+            if p % 2 == 0 {
+                ns[idx].push(sample(arms[idx].1));
+                up[idx].push(sample(upstream_arms[idx]));
+            } else {
+                up[idx].push(sample(upstream_arms[idx]));
+                ns[idx].push(sample(arms[idx].1));
+            }
+        }
+    }
+    for v in &mut ns {
+        v.sort_unstable();
+    }
+    for v in &mut up {
+        v.sort_unstable();
+    }
+    let med = |v: &[u64]| v[v.len() / 2];
+
+    println!();
+    println!(
+        "{:<30} {:>10} {:>10} {:>12} {:>12} {:>9}",
+        "arm", "ours MB/s", "up MB/s", "ours ns/doc", "up ns/doc", "ours/up"
+    );
+    for (k, (name, _)) in arms.iter().enumerate() {
+        let m = med(&ns[k]);
+        let u = med(&up[k]);
+        println!(
+            "{:<30} {:>10.0} {:>10.0} {:>12.0} {:>12.0} {:>8.3}x",
+            name,
+            total as f64 / m as f64 * 1e3,
+            total as f64 / u as f64 * 1e3,
+            m as f64 / docs.len() as f64,
+            u as f64 / docs.len() as f64,
+            m as f64 / u as f64
+        );
+    }
+    println!();
+    println!(
+        "B7 ceiling for streaming: reader / slice = {:.3}x   |   \
+         stream machinery cost: slice / per-document = {:.3}x",
+        med(&ns[2]) as f64 / med(&ns[1]) as f64,
+        med(&ns[1]) as f64 / med(&ns[0]) as f64
+    );
+    println!(
+        "method: in-process, one binary, three arms with the leading arm rotated per pair so none \
+         is always cold; pairs={}; window={} ms per arm-sample, statistic=min per-iteration time \
+         in the window; work parity asserted before timing (equal document count and equal values \
+         across all three arms, and the whole file asserted NOT to parse as one document); \
+         document={} ({} bytes, {} documents, mean {} B); value type={}; isa={}; allocator={}",
+        pairs,
+        window_ms,
+        file.name(),
+        total,
+        docs.len(),
+        total / docs.len(),
+        if typed { "LogRecord (typed)" } else { "Value" },
         turbo::counters::isa(),
         alloc_arm::name()
     );

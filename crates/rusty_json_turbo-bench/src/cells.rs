@@ -145,6 +145,7 @@ impl Fixture for crate::s4_sync_envelope::SyncEnvelope {}
 impl Fixture for crate::s4_node_config::NodeConfig {}
 impl Fixture for crate::s4_vault_shard::VaultShard {}
 impl Fixture for crate::s4_ocr_i18n::OcrI18n {}
+impl Fixture for crate::s5_log_stream::LogRecord {}
 
 /// Call a generic function with the fixture type belonging to `$file`.
 ///
@@ -185,6 +186,14 @@ macro_rules! by_fixture {
             }
             $crate::corpus::File::S4OcrI18n => {
                 $call::<$crate::s4_ocr_i18n::OcrI18n>($($arg),*)
+            }
+            // S5's "document" is ONE LINE of the stream, not the file. The
+            // file itself is not valid JSON, so a whole-file column on it is
+            // meaningless -- `cells::run` is never asked for one, and the
+            // stream verb slices the lines first.
+            $crate::corpus::File::S5LogStream
+            | $crate::corpus::File::S5LogStreamPretty => {
+                $call::<$crate::s5_log_stream::LogRecord>($($arg),*)
             }
         }
     };

@@ -2240,3 +2240,110 @@ measured by ours-against-upstream on that cell at all: the bias is larger than
 the bar. Either the bar needs a bias-netted definition, or S4's standing has to
 be quoted from a knob A/B against our own previous code -- which says our
 bricks give it 1.069x. Recorded rather than quietly dropped.
+
+### 2026-09-10 -- M5: the S5 stream cell, and B7's real headline
+
+Every other cell in this harness measures throughput on ONE large document. A
+log stream is the opposite shape -- 10,000 documents of about 260 bytes -- and
+the two questions come apart, because per-document setup that vanishes into a
+600 KB average dominates a 260-byte line. `rjson-bench stream` is the cell for
+that, and it is the only one that can exercise `StreamDeserializer` at all.
+
+#### Three arms, and why each is there
+
+1. **per-document `from_slice`** -- what a caller does having split the stream
+   itself. The floor: no stream machinery.
+2. **`StreamDeserializer` over a slice** -- serde_json splitting it, whole
+   stream in memory.
+3. **`StreamDeserializer` over a reader** -- the shape a service actually has,
+   and the one brick B7 rebuilt.
+
+Each is run against its upstream twin, because G2's bar is stated against
+upstream and no other cell can measure a stream.
+
+**Slicing is done with the ORACLE's `StreamDeserializer`, not by splitting on
+newlines.** Splitting on a newline byte would be wrong twice over: one can
+appear inside a string as an escape, and the pretty variant puts newlines
+INSIDE each document rather than only between them. `byte_offset()` after each
+item is the only correct boundary -- which is also exactly the contract B7 had
+to preserve, so using it here doubles as a check that it still holds.
+
+Work parity is asserted before timing: all three arms must yield the same
+document count and equal values, **and the whole file is asserted NOT to parse
+as one document.** A concatenation of JSON values is not a JSON value; if
+`from_slice` on the file ever succeeded, the corpus member would have stopped
+being a stream.
+
+#### B7's headline: this is the workload it was built for
+
+`s5-log-stream.ndjson`, 10,000 documents, 2.6 MB, 15 pairs, leading arm
+rotated, crate order alternated per pair.
+
+| arm | ours | upstream | ours/up |
+|---|---:|---:|---:|
+| per-document `from_slice`, `Value` | 183 MB/s | 190 | 1.039x |
+| `StreamDeserializer` / slice, `Value` | 181 MB/s | 197 | 1.088x |
+| **`StreamDeserializer` / reader, `Value`** | **156 MB/s** | 140 | **0.902x = 1.11x faster** |
+| per-document `from_slice`, typed | 273 MB/s | 274 | 1.004x |
+| `StreamDeserializer` / slice, typed | 275 MB/s | 279 | 1.012x |
+| **`StreamDeserializer` / reader, typed** | **221 MB/s** | 176 | **0.795x = 1.26x faster** |
+
+**On the reader arm we beat upstream by 1.11x on `Value` and 1.26x on a typed
+struct.** That is B7 doing exactly what it was built for, on the only scenario
+in the corpus that has the shape B7 addresses -- and it is a bigger win than
+the same brick shows on any single-document cell, because a stream is all
+reader.
+
+The slice arms are at parity or a little behind (1.004x to 1.088x). Given the
+measured instantiation floor -- parse cells 0.979x to 1.004x -- the typed slice
+arms are flat and the `Value` slice arm's 1.088x is at the edge of what this
+comparison can resolve. No claim is made either way.
+
+#### Two findings from the cell itself
+
+**`StreamDeserializer` costs nothing.** Against pre-slicing the documents by
+hand it measures 0.993x to 1.020x across four configurations. serde_json's
+stream machinery is free; a caller who splits the stream itself gains nothing
+for the trouble.
+
+**Per-document cost is almost entirely FIXED, not proportional to size.** The
+minified stream is 261 bytes per document and the pretty variant 325, and the
+pretty one is *faster per document*: 1,289 ns against 1,328 for `Value`, 928
+against 956 typed. More bytes, less time -- because the extra bytes are
+whitespace, which the wide scanner eats cheaply, while the per-document setup
+is the same either way.
+
+That fixed cost is the whole story for log-sized payloads. The same parser does
+about 470 MB/s on a 631 KB document and **183 MB/s on 261-byte documents**, and
+the difference is not the bytes. It is the second, independent confirmation of
+the latency finding from M1-D, which measured a 65x spread in MB/s driven by
+message size alone.
+
+**A typed struct is 1.4x to 1.5x faster than `Value` here** (273 against 183
+MB/s), far more than on any large document, because `Value` pays a `Map`
+allocation per document and a 261-byte document has nothing to amortise it
+over.
+
+#### The fixture, and the two shapes it keeps on purpose
+
+`s5_log_stream::LogRecord` keeps two things a convenient fixture would have
+flattened away, because they are the serde paths a log line really has:
+`trace` is `Option<String>` and is **absent** -- not null -- on 1,527 of the
+10,000 lines, so absent and present-but-null have to be told apart; and `err`
+is `Option<ErrorDetail>`, null on 8,579 lines, with a further `Option<u64>`
+inside it that is null on 545 of the 1,421 present. Nested optionality is where
+a hand-rolled deserializer usually goes wrong.
+
+`fields` is a `Map`, and that is honest rather than lazy: measured, the 10,000
+lines carry **609 distinct key sets over 64 distinct keys** with string,
+integer, float and boolean values mixed. It is a field bag, not a struct.
+
+#### One registration trap, again
+
+`File::path()` built its path as `format!("{}.json", name())`, which cannot
+express `.ndjson`. And `Scenario` gained an `S5` arm, which made the compiler
+reject four `match` sites that had silently been exhaustive -- `by_fixture!`,
+`message_array`, the oracle's label builder and `Scenario::name`. Each one
+would have been a silent skip or a wrong answer if the enum had carried a
+catch-all. Exhaustive matches are why adding a corpus scenario is a compile
+error rather than a quiet omission.

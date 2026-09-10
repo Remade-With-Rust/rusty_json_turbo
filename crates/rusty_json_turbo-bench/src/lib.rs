@@ -54,12 +54,15 @@ pub mod twitter;
 // so "what if key matching were free" is a measurement rather than a guess.
 pub mod b6_probe;
 pub mod s4_frame_telemetry;
+// S5: one line of an NDJSON log stream. The only fixture with an absent-vs-null
+// distinction and nested optionality, because a log line really has both.
 pub mod s4_media_probe;
 pub mod s4_node_config;
 pub mod s4_ocr_i18n;
 pub mod s4_signin_batch;
 pub mod s4_sync_envelope;
 pub mod s4_vault_shard;
+pub mod s5_log_stream;
 
 pub mod alloc_arm;
 pub mod cells;

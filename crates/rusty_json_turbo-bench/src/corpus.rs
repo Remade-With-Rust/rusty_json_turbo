@@ -36,6 +36,9 @@ pub enum File {
     S4NodeConfig,
     S4VaultShard,
     S4OcrI18n,
+    // S5: the NDJSON stream. NOT one document -- see `Scenario::S5`.
+    S5LogStream,
+    S5LogStreamPretty,
 }
 
 /// Which corpus scenario a file belongs to.
@@ -45,6 +48,12 @@ pub enum Scenario {
     S1S3,
     /// The house payloads.
     S4,
+    /// The NDJSON stream. **These files are not documents.** A concatenation
+    /// of JSON values is not itself valid JSON, so `from_slice` on one of them
+    /// fails with "trailing characters" and only `StreamDeserializer` reads
+    /// them. That is the point of the scenario, and why it is separate rather
+    /// than more S4 members.
+    S5,
 }
 
 impl Scenario {
@@ -52,6 +61,7 @@ impl Scenario {
         match self {
             Scenario::S1S3 => "S1-S3",
             Scenario::S4 => "S4",
+            Scenario::S5 => "S5",
         }
     }
 }
@@ -66,6 +76,9 @@ impl File {
     /// Alias for [`File::S1_S3`]. A timing verb's `--all` means THIS, so that a
     /// number quoted today is comparable with one quoted before S4 existed.
     pub const ALL: [File; 3] = File::S1_S3;
+
+    /// The NDJSON stream documents. Read only through `StreamDeserializer`.
+    pub const S5: [File; 2] = [File::S5LogStream, File::S5LogStreamPretty];
 
     /// The seven house payloads.
     pub const S4: [File; 7] = [
@@ -107,6 +120,10 @@ impl File {
             "node-config" | "s4-node-config" | "config" => Some(File::S4NodeConfig),
             "vault-shard" | "s4-vault-shard" | "vault" => Some(File::S4VaultShard),
             "ocr-i18n" | "s4-ocr-i18n" | "ocr" => Some(File::S4OcrI18n),
+            "log-stream" | "s5-log-stream" | "stream" => Some(File::S5LogStream),
+            "log-stream-pretty" | "s5-log-stream-pretty" | "stream-pretty" => {
+                Some(File::S5LogStreamPretty)
+            }
             _ => None,
         }
     }
@@ -123,24 +140,44 @@ impl File {
             File::S4NodeConfig => "s4-node-config",
             File::S4VaultShard => "s4-vault-shard",
             File::S4OcrI18n => "s4-ocr-i18n",
+            File::S5LogStream => "s5-log-stream",
+            File::S5LogStreamPretty => "s5-log-stream-pretty",
         }
     }
 
     pub fn scenario(self) -> Scenario {
         match self {
             File::Canada | File::CitmCatalog | File::Twitter => Scenario::S1S3,
+            File::S5LogStream | File::S5LogStreamPretty => Scenario::S5,
             _ => Scenario::S4,
         }
     }
 
-    /// S4 lives in its own subdirectory, so the scenario decides the path.
+    /// S4 and S5 live in their own subdirectories, so the scenario decides
+    /// the path -- and S5's stream file is `.ndjson`, not `.json`.
     pub fn path(self) -> PathBuf {
-        match self.scenario() {
-            Scenario::S1S3 => corpus_dir().join(format!("{}.json", self.name())),
-            Scenario::S4 => corpus_dir()
-                .join("s4")
-                .join(format!("{}.json", self.name())),
-        }
+        let (dir, ext) = match self {
+            File::S5LogStream => ("s5", "ndjson"),
+            File::S5LogStreamPretty => ("s5", "json"),
+            _ => match self.scenario() {
+                Scenario::S1S3 => return corpus_dir().join(format!("{}.json", self.name())),
+                Scenario::S4 => ("s4", "json"),
+                Scenario::S5 => unreachable!("both S5 files are matched above"),
+            },
+        };
+        corpus_dir()
+            .join(dir)
+            .join(format!("{}.{ext}", self.name()))
+    }
+
+    /// Is this file a STREAM of documents rather than one document?
+    ///
+    /// `from_slice` on a stream file fails, by design: a concatenation of JSON
+    /// values is not a JSON value. Any code that treats every corpus file as a
+    /// document has to ask this first.
+    #[must_use]
+    pub fn is_stream(self) -> bool {
+        self.scenario() == Scenario::S5
     }
 
     pub fn load(self) -> Vec<u8> {
@@ -164,9 +201,49 @@ impl File {
             File::S4VaultShard => Some("shards"),
             // `sync-envelope` nests its records one level down, under `data`.
             File::S4SyncEnvelope => Some("data.entries"),
+            // A stream has no container to slice: every line is already its
+            // own document. `stream_documents` is the accessor for those.
+            File::S5LogStream | File::S5LogStreamPretty => None,
             File::S4NodeConfig | File::Canada | File::CitmCatalog | File::Twitter => None,
         }
     }
+}
+
+/// The individual documents of a STREAM file, with their original bytes.
+///
+/// S5 has no container to slice -- every line is already a complete document
+/// -- so [`File::message_array`] does not apply and this is the accessor
+/// instead.
+///
+/// Sliced with the ORACLE's `StreamDeserializer`, not by splitting on newlines.
+/// Splitting on a newline byte would be wrong twice over: one can appear inside
+/// a string as an escape, and the pretty variant puts newlines INSIDE each
+/// document rather than only between them. `byte_offset()` after each item is
+/// the only correct boundary, and it is also exactly the contract brick B7 had
+/// to preserve -- so using it here doubles as a check that it still holds.
+///
+/// Returns an empty vector for a file that is not a stream.
+#[must_use]
+pub fn stream_documents(file: File) -> Vec<Vec<u8>> {
+    if !file.is_stream() {
+        return Vec::new();
+    }
+    let bytes = file.load();
+    let mut out = Vec::new();
+    let mut stream = serde_json_upstream::Deserializer::from_slice(&bytes)
+        .into_iter::<serde_json_upstream::Value>();
+    let mut start = 0usize;
+    while let Some(item) = stream.next() {
+        item.unwrap_or_else(|e| panic!("{}: not a valid stream: {e}", file.name()));
+        let end = stream.byte_offset();
+        // Trim the whitespace BETWEEN documents so each slice is one document
+        // and nothing else; the pretty variant has up to ten shapes of it.
+        let doc = &bytes[start..end];
+        let lead = doc.len() - doc.trim_ascii_start().len();
+        out.push(doc[lead..].to_vec());
+        start = end;
+    }
+    out
 }
 
 /// `<repo>/corpus`, located relative to this crate so tests and the binary
@@ -190,6 +267,10 @@ pub fn all_documents() -> Vec<(String, Vec<u8>)> {
         let label = match f.scenario() {
             Scenario::S1S3 => format!("{}.json", f.name()),
             Scenario::S4 => format!("s4/{}.json", f.name()),
+            // Unreachable: `EVERY` holds no stream files, because a stream is
+            // not a document. They reach the oracle through the `s5`
+            // directory scan below instead.
+            Scenario::S5 => unreachable!("EVERY contains no stream files"),
         };
         out.push((label, f.load()));
     }
