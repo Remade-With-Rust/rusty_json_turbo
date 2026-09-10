@@ -46,6 +46,36 @@ carry their measured numbers and method line, never an adjective.
   and **deterministic work counters** (`rjson-bench work`, library feature
   `profile`) with an `RJT_*` A/B knob (feature `knobs`) so two implementations
   can be compared inside one binary rather than across two code layouts.
+- **Brick B7: the reader path gets a window.** `IoRead` no longer wraps
+  `reader.bytes()` -- one `io::Result<u8>` per byte through a per-byte line and
+  column counter. It holds a 16 KiB window, reads in 8 KiB blocks, and hands
+  that window to the same wide whitespace scanner the slice path uses; line and
+  column are counted with `memchr` when an error asks rather than on every
+  byte. `LineColIterator` is now unreferenced and `src/iter.rs` is deleted.
+  - Measured against `from_slice`, which B7 cannot affect and which therefore
+    serves as the in-run control, 31 pairs: the gap closed from **1.55x to
+    1.22x** on `citm_catalog` and **1.28x to 1.14x** on `twitter`, with
+    `canada` and the minified S4 payload neutral. Nothing regressed.
+  - **You no longer want a `std::io::BufReader`.** It now layers a second
+    buffer over this one and costs `twitter` 367 -> 298 MB/s. The
+    documentation on `IoRead::new` says so.
+  - It took four attempts and three were losses, each a different lesson: a
+    buffer alone was worse everywhere; adding the scanner fixed `citm_catalog`
+    and broke `canada`; serving `peek` from the buffer rather than from a
+    register cost 2.2 million bounds-checked loads on `canada`; and the scanner
+    needed **a tiny entry** so a minified document never reaches it. That last
+    one is the third time this project has needed the same thing, after B1s's
+    scalar peel and M3's length guard. Full account in `corpus/LEDGER.md`.
+  - Two gates caught real bugs: `raw_value` broke at once, because skipping a
+    whitespace run wholesale stopped feeding those bytes to the raw-value
+    buffer and turned `{"foo": 2}` into `{"foo":2}`; and a new test route that
+    hands the parser **one byte per `read`** forces a refill between almost
+    every byte, splitting every token, escape and line boundary.
+- **Corpus S5 (NDJSON stream) and S6 (pathological)**, generated and gated. 21
+  new documents take the byte-identical oracle from 73 to **94** corpus
+  documents, with **zero mismatches** -- including eight files expected to FAIL,
+  which must fail with the same error text at the same line and column as
+  upstream, and 100-deep nesting on both sides of the 128-frame recursion limit.
 - **M4 resolved: the serde fork does not earn its keep**, and all three of its
   bricks are retired on evidence rather than left open.
   - **B6 and B6h refuted by a ceiling probe.** A hand-written field dispatch

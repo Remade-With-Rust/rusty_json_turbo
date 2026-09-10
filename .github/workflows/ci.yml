@@ -191,8 +191,10 @@ jobs:
       # generator regenerating its own output byte-for-byte is the equivalent
       # check: a corpus that drifted between runs would silently invalidate
       # every number ever taken against it.
-      - name: The S4 corpus is exactly what its generator produces
-        run: python tools/gen-s4.py --check
+      - name: The generated corpora are exactly what their generators produce
+        run: |
+          python tools/gen-s4.py --check
+          python tools/gen-s5-s6.py --check
       # Same rule as the whitespace knob, for the escape scan: both arms must
       # agree with upstream, and the wide arm must actually be reached.
       - name: Both arms of the escape knob agree with upstream

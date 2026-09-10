@@ -1,0 +1,7 @@
+# S6 payloads are DATA, keyed by SHA-256 in MANIFEST.md, and six of them exist
+# to produce an EXACT error message with an exact line and column. A checkout
+# that rewrote line endings would move every one of those columns, so the
+# must-fail files would still fail -- at the wrong position, which the oracle
+# reports as a mismatch. The root `.gitattributes` already pins
+# `corpus/**/*.json`; this is the local, visible statement of the same rule.
+*.json -text

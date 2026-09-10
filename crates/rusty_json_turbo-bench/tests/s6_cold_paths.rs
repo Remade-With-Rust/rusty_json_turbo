@@ -24,8 +24,55 @@
 const BS: char = '\u{5C}';
 
 fn agree(name: &str, doc: &str) {
-    let ours: Result<turbo::Value, _> = turbo::from_str(doc);
-    let theirs: Result<serde_json_upstream::Value, _> = serde_json_upstream::from_str(doc);
+    agree_via(name, doc, Route::Slice);
+    // THE READER PATH TOO, and for brick B7 this is the arm that matters.
+    // `IoRead` no longer wraps a per-byte iterator with a per-byte line
+    // counter; it holds a window and counts newlines with `memchr` only when
+    // an error asks. So every error position below is a check on bookkeeping
+    // that was rewritten, and it is checked against upstream's, which still
+    // counts per byte.
+    agree_via(name, doc, Route::Reader);
+    // And through a reader that hands over ONE BYTE AT A TIME, which forces a
+    // refill between almost every byte. Token boundaries, escape sequences and
+    // line counting all have to survive being split at arbitrary points, and
+    // no other test in this project makes that happen.
+    agree_via(name, doc, Route::DribbleReader);
+}
+
+#[derive(Clone, Copy, PartialEq, Debug)]
+enum Route {
+    Slice,
+    Reader,
+    DribbleReader,
+}
+
+/// A reader that yields at most one byte per `read`, so the parser has to
+/// refill constantly and every token gets split.
+struct Dribble<'a>(&'a [u8]);
+
+impl std::io::Read for Dribble<'_> {
+    fn read(&mut self, out: &mut [u8]) -> std::io::Result<usize> {
+        if self.0.is_empty() || out.is_empty() {
+            return Ok(0);
+        }
+        out[0] = self.0[0];
+        self.0 = &self.0[1..];
+        Ok(1)
+    }
+}
+
+fn agree_via(name: &str, doc: &str, route: Route) {
+    let name = &format!("{name} [{route:?}]");
+    let ours: Result<turbo::Value, _> = match route {
+        Route::Slice => turbo::from_str(doc),
+        Route::Reader => turbo::from_reader(doc.as_bytes()),
+        Route::DribbleReader => turbo::from_reader(Dribble(doc.as_bytes())),
+    };
+    let theirs: Result<serde_json_upstream::Value, _> = match route {
+        Route::Slice => serde_json_upstream::from_str(doc),
+        Route::Reader => serde_json_upstream::from_reader(doc.as_bytes()),
+        Route::DribbleReader => serde_json_upstream::from_reader(Dribble(doc.as_bytes())),
+    };
 
     match (&ours, &theirs) {
         (Ok(a), Ok(b)) => {

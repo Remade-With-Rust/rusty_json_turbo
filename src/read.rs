@@ -8,8 +8,6 @@ use core::str;
 #[cfg(feature = "std")]
 use crate::io;
 #[cfg(feature = "std")]
-use crate::iter::LineColIterator;
-
 #[cfg(feature = "raw_value")]
 use crate::raw::BorrowedRawDeserializer;
 #[cfg(all(feature = "raw_value", feature = "std"))]
@@ -191,13 +189,79 @@ where
 /// JSON input source that reads from a std::io input stream.
 #[cfg(feature = "std")]
 #[cfg_attr(docsrs, doc(cfg(feature = "std")))]
+/// First byte at or after `from` that is not JSON whitespace.
+///
+/// The island when it is linked, and a plain walk when it is not, so a
+/// `--no-default-features` build still compiles and still behaves identically.
+#[cfg(feature = "std")]
+#[inline]
+fn first_non_ws_in(slice: &[u8], from: usize) -> usize {
+    #[cfg(feature = "accel")]
+    {
+        rusty_json_turbo_accel::first_non_ws(slice, from)
+    }
+    #[cfg(not(feature = "accel"))]
+    {
+        let mut i = from;
+        while i < slice.len() && is_ws(slice[i]) {
+            i += 1;
+        }
+        i
+    }
+}
+
+/// Bytes pulled from the reader per refill. Big enough that the per-call cost
+/// disappears, small enough to stay in L1 alongside everything else.
+const IO_CHUNK: usize = 8192;
+
+/// BRICK B7. Upstream held a `LineColIterator<io::Bytes<R>>` -- one
+/// `io::Result<u8>` per byte, wrapped in a per-byte line and column
+/// counter. Measured, `from_reader` was 1.55x slower than `from_slice` on
+/// `citm_catalog` and 1.28x on `twitter`, and the gap tracked WHITESPACE
+/// exactly, because every whitespace brick this crate has landed works on
+/// a slice and this reader had none to offer.
+///
+/// Now it holds a window. The bytes are a slice, so the same scanners can
+/// run over them, and the line and column counters are computed only when
+/// an error actually needs them.
 pub struct IoRead<R>
 where
     R: io::Read,
 {
-    iter: LineColIterator<io::Bytes<R>>,
-    /// Temporary storage of peeked byte.
+    reader: R,
+    /// The window, allocated ONCE and never resized.
+    ///
+    /// An earlier version grew it with `resize(len + CHUNK, 0)` per refill,
+    /// which zeroed eight kilobytes every time -- as much zeroing as parsing
+    /// on a document of any size. `filled` marks how much is valid instead.
+    buf: Vec<u8>,
+    /// Bytes of `buf` holding real data; `buf[pos..filled]` is unread.
+    filled: usize,
+    pos: usize,
+    /// Absolute stream offset of `buf[0]`.
+    base: usize,
+    /// The reader has returned zero bytes.
+    eof: bool,
+    /// The peeked byte, held in a register the way upstream held it.
+    ///
+    /// This is not redundant with the buffer, and an earlier version of this
+    /// brick learned that the expensive way. Serving `peek` straight out of
+    /// the buffer means a length compare, a bounds-checked index and a store
+    /// on EVERY call -- and `canada.json` makes 2.2 million of them. That
+    /// version regressed `canada` from 1.10x to 1.32x behind `from_slice`
+    /// while improving `citm_catalog`, which is not a trade this project
+    /// accepts.
+    ///
+    /// So the hot path stays exactly upstream's shape -- one `Option` in a
+    /// register -- and the buffer sits underneath it, where the wide scanners
+    /// can reach the bytes. `pos` is already past whatever `ch` holds, which
+    /// is also what makes the position arithmetic below identical to
+    /// upstream's.
     ch: Option<u8>,
+    /// Line number of the line containing `base`, 1-based.
+    line_at_base: usize,
+    /// Absolute offset of the first byte of the line containing `base`.
+    sol_at_base: usize,
     #[cfg(feature = "raw_value")]
     raw_buffer: Option<Vec<u8>>,
 }
@@ -237,32 +301,129 @@ where
 {
     /// Create a JSON input source to read from a std::io input stream.
     ///
-    /// This does not buffer the input, so **wrap a [`File`] or a socket in
-    /// [`std::io::BufReader`]**: without it, `bytes()` means one `read` syscall
-    /// per byte.
+    /// **This buffers internally, so you do not need a
+    /// [`std::io::BufReader`].** Upstream did not, and told you to add one;
+    /// this reads in 8 KiB blocks itself, so wrapping the input in a second
+    /// buffer only adds a layer. It is harmless on a [`File`] and a measurable
+    /// loss on data already in memory.
     ///
-    /// **But do NOT wrap a reader whose data is already in memory** -- a
-    /// `&[u8]`, a `Cursor`, a `Vec`. There are no syscalls there for the buffer
-    /// to amortise, so it only adds a second per-byte layer on top of one that
-    /// is already the bottleneck. Measured on this corpus, a `BufReader` around
-    /// a `&[u8]` costs `citm_catalog` 412 -> 375 MB/s and `twitter` 289 -> 248
-    /// MB/s. For bytes already in memory, prefer
-    /// [`from_slice`](crate::from_slice) over `from_reader` entirely: it is
-    /// 1.28x faster on `twitter` and 1.55x on `citm_catalog`, because the
-    /// slice path can scan whitespace sixteen bytes at a time and this one
-    /// cannot see a slice to scan.
-    ///
-    /// Upstream's wording did not distinguish the two cases; the numbers above
-    /// are in `corpus/LEDGER.md` under M5.
+    /// For bytes you already hold, [`from_slice`](crate::from_slice) is still
+    /// the faster route -- it can borrow strings straight out of the input,
+    /// which no reader can do.
     ///
     /// [`File`]: std::fs::File
     pub fn new(reader: R) -> Self {
         IoRead {
-            iter: LineColIterator::new(reader.bytes()),
+            reader,
+            buf: alloc::vec![0; IO_CHUNK * 2],
+            filled: 0,
+            pos: 0,
+            base: 0,
+            eof: false,
             ch: None,
+            line_at_base: 1,
+            sol_at_base: 0,
             #[cfg(feature = "raw_value")]
             raw_buffer: None,
         }
+    }
+
+    /// Drop what has been consumed and pull more bytes.
+    ///
+    /// Only called when the window is exhausted, so nothing peeked is ever
+    /// dropped: a peeked byte is by definition still in the window.
+    // COLD, and marked so deliberately: a refill happens once per 8 KiB, so
+    // inlining it into `pull` would put its `memchr`, its `copy_within` and its
+    // `read` call in the middle of a path taken once per BYTE. `canada.json`
+    // makes 2.2 million of those.
+    #[cold]
+    #[inline(never)]
+    fn fill(&mut self) -> Result<()> {
+        if self.pos > 0 {
+            // The bytes about to be dropped are the only place the line
+            // counters can be advanced from, so roll them forward first.
+            self.roll_lines(self.pos);
+            self.buf.copy_within(self.pos..self.filled, 0);
+            self.filled -= self.pos;
+            self.base += self.pos;
+            self.pos = 0;
+        }
+        if self.eof || self.filled == self.buf.len() {
+            return Ok(());
+        }
+        // A short read is fine and expected from a pipe or socket: the caller
+        // asks again, and `eof` is set only by a read of length zero.
+        match self.reader.read(&mut self.buf[self.filled..]) {
+            Ok(0) => {
+                self.eof = true;
+                Ok(())
+            }
+            Ok(n) => {
+                self.filled += n;
+                Ok(())
+            }
+            Err(e) => Err(Error::io(e)),
+        }
+    }
+
+    /// Advance `line_at_base` / `sol_at_base` over `buf[..n]`.
+    ///
+    /// `memchr` rather than a per-byte branch, which is the other half of what
+    /// B7 removes: upstream counted lines on every byte whether or not any
+    /// error was ever reported.
+    fn roll_lines(&mut self, n: usize) {
+        let seg = &self.buf[..n];
+        let mut count = 0;
+        let mut last = None;
+        for i in memchr::memchr_iter(b'\n', seg) {
+            count += 1;
+            last = Some(i);
+        }
+        if let Some(i) = last {
+            self.sol_at_base = self.base + i + 1;
+        }
+        self.line_at_base += count;
+    }
+
+    /// Line and column at absolute offset `k`, matching `LineColIterator`
+    /// exactly: line is 1-based and counts newlines PULLED, column is the
+    /// number of bytes since the start of the current line, so it is 0
+    /// immediately after a newline.
+    ///
+    /// Only reached from an error path, so scanning the window here is free in
+    /// the sense that matters.
+    fn position_at(&self, k: usize) -> Position {
+        let rel = (k - self.base).min(self.filled);
+        let mut line = self.line_at_base;
+        let mut sol = self.sol_at_base;
+        for i in memchr::memchr_iter(b'\n', &self.buf[..rel]) {
+            line += 1;
+            sol = self.base + i + 1;
+        }
+        Position {
+            line,
+            column: k - sol,
+        }
+    }
+
+    /// Bytes PULLED from the stream. `pos` is already past a byte held in
+    /// `ch`, so this is exactly what `LineColIterator::byte_offset` reported.
+    fn pulled(&self) -> usize {
+        self.base + self.pos
+    }
+
+    /// Pull one byte into `ch`, refilling if the window is spent.
+    #[inline(always)]
+    fn pull(&mut self) -> Result<Option<u8>> {
+        if self.pos == self.filled {
+            tri!(self.fill());
+            if self.pos == self.filled {
+                return Ok(None);
+            }
+        }
+        let ch = self.buf[self.pos];
+        self.pos += 1;
+        Ok(Some(ch))
     }
 }
 
@@ -315,44 +476,27 @@ where
 {
     #[inline]
     fn next(&mut self) -> Result<Option<u8>> {
-        match self.ch.take() {
-            Some(ch) => {
-                #[cfg(feature = "raw_value")]
-                {
-                    if let Some(buf) = &mut self.raw_buffer {
-                        buf.push(ch);
-                    }
-                }
-                Ok(Some(ch))
+        let ch = match self.ch.take() {
+            Some(ch) => Some(ch),
+            None => tri!(self.pull()),
+        };
+        #[cfg(feature = "raw_value")]
+        {
+            if let (Some(ch), Some(buf)) = (ch, &mut self.raw_buffer) {
+                buf.push(ch);
             }
-            None => match self.iter.next() {
-                Some(Err(err)) => Err(Error::io(err)),
-                Some(Ok(ch)) => {
-                    #[cfg(feature = "raw_value")]
-                    {
-                        if let Some(buf) = &mut self.raw_buffer {
-                            buf.push(ch);
-                        }
-                    }
-                    Ok(Some(ch))
-                }
-                None => Ok(None),
-            },
         }
+        Ok(ch)
     }
 
     #[inline]
     fn peek(&mut self) -> Result<Option<u8>> {
         match self.ch {
             Some(ch) => Ok(Some(ch)),
-            None => match self.iter.next() {
-                Some(Err(err)) => Err(Error::io(err)),
-                Some(Ok(ch)) => {
-                    self.ch = Some(ch);
-                    Ok(self.ch)
-                }
-                None => Ok(None),
-            },
+            None => {
+                self.ch = tri!(self.pull());
+                Ok(self.ch)
+            }
         }
     }
 
@@ -371,23 +515,100 @@ where
         }
     }
 
-    fn position(&self) -> Position {
-        Position {
-            line: self.iter.line(),
-            column: self.iter.col(),
+    /// THE POINT OF BRICK B7: run the wide whitespace scanner over the window.
+    ///
+    /// This is the half of the ceiling the buffer exists to unlock. Measured,
+    /// the 1.55x gap between `from_reader` and `from_slice` on `citm_catalog`
+    /// decomposed as roughly 1.41x from the missing slice scanners and only
+    /// 1.10x from the per-byte iterator -- so a buffer WITHOUT this override is
+    /// all cost and no benefit, which an earlier version of this brick duly
+    /// measured as a regression on every file.
+    ///
+    /// A whitespace run may cross a refill, so the scan repeats until it finds
+    /// a non-whitespace byte or the reader is spent. The byte is left in `ch`
+    /// rather than consumed, exactly as the trait's `peek`-based default leaves
+    /// it, so error positions and `RawValue` capture are unchanged.
+    #[inline]
+    fn skip_whitespace(&mut self) -> Result<Option<u8>> {
+        // Whatever was already peeked comes first, or the scan would step over
+        // it and lose a byte.
+        if let Some(c) = self.ch {
+            if !is_ws(c) {
+                return Ok(Some(c));
+            }
+            #[cfg(feature = "raw_value")]
+            {
+                if let Some(buf) = &mut self.raw_buffer {
+                    buf.push(c);
+                }
+            }
+            self.ch = None;
+        }
+        // THE TINY ENTRY, and this is the third time this project has needed
+        // one. On a minified document there is no whitespace at all, so every
+        // call would otherwise enter the scanner, dispatch on the ISA, and
+        // find its answer at offset zero. `canada.json` and
+        // `s4-frame-telemetry.json` regressed 1.10x -> 1.16x and 1.02x ->
+        // 1.10x on exactly that before this existed.
+        //
+        // Brick B1s needed a 4-byte scalar peel for the same reason, and M3's
+        // escape scanner needed a length guard. The law is the same each time:
+        // a wide scanner must not be reached until something cheap has ruled
+        // out the common case.
+        if self.pos < self.filled {
+            let c = self.buf[self.pos];
+            if !is_ws(c) {
+                self.pos += 1;
+                self.ch = Some(c);
+                return Ok(Some(c));
+            }
+        }
+        loop {
+            let at = first_non_ws_in(&self.buf[..self.filled], self.pos);
+            // A `RawValue` captures the raw TEXT of a value, whitespace and
+            // all, and upstream captured it through `discard`, which pushed
+            // every skipped byte. Skipping a run wholesale has to push it
+            // wholesale, or `{"foo": 2}` comes back as `{"foo":2}` -- which is
+            // exactly what `test_boxed_raw_value` caught here.
+            #[cfg(feature = "raw_value")]
+            {
+                if let Some(raw) = &mut self.raw_buffer {
+                    raw.extend_from_slice(&self.buf[self.pos..at]);
+                }
+            }
+            if at < self.filled {
+                // Pull it: `pos` moves past the byte and `ch` holds it, which
+                // is the state a `peek` would have left.
+                self.pos = at + 1;
+                let c = self.buf[at];
+                self.ch = Some(c);
+                return Ok(Some(c));
+            }
+            self.pos = self.filled;
+            tri!(self.fill());
+            if self.pos == self.filled {
+                return Ok(None);
+            }
         }
     }
 
+    fn position(&self) -> Position {
+        self.position_at(self.pulled())
+    }
+
     fn peek_position(&self) -> Position {
-        // The LineColIterator updates its position during peek() so it has the
-        // right one here.
+        // Upstream's comment: "The LineColIterator updates its position during
+        // peek() so it has the right one here." A peek here pulls too, so the
+        // same is true and these stay equal.
         self.position()
     }
 
     fn byte_offset(&self) -> usize {
+        // Upstream computed `iter.byte_offset() - 1` when a byte was peeked.
+        // Same arithmetic, same meaning: bytes CONSUMED.
         match self.ch {
-            Some(_) => self.iter.byte_offset() - 1,
-            None => self.iter.byte_offset(),
+            Some(_) => self.pulled() - 1,
+            None => self.pulled(),
         }
     }
 

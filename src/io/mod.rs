@@ -17,4 +17,4 @@ mod imp;
 use std::io as imp;
 
 #[cfg(feature = "std")]
-pub use std::io::{Bytes, Read};
+pub use std::io::Read;

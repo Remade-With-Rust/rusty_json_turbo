@@ -140,7 +140,7 @@ of having instruments first.
 | **Escape-mask writer** | stringify | per-chunk "needs escape" mask, one write per clean run | ✅ **landed** — see below |
 | **8-digit integer / fraction parse** | number-heavy input | validate and convert eight ASCII digits in one 8-byte load, per-digit tail | ✅ **landed** — see below |
 | Key dispatch + derive handshake | struct parse | length-bucketed match, then a field-index handshake across the serde seam, replacing a linear `memcmp` ladder per key | planned |
-| Buffered reader | `from_reader` | an internal buffer reusing the slice scanners, instead of one iterator call per byte | planned |
+| **Buffered reader** | `from_reader` | an internal window reusing the slice scanners, instead of one iterator call per byte | ✅ **landed** — the reader-to-slice gap closed from 1.55x to 1.22x on `citm_catalog`, 1.28x to 1.14x on `twitter`; and you no longer want a `BufReader` |
 | ASCII fast-path UTF-8 validation | `from_slice` | validate the ASCII run wide, walk only non-ASCII tails | **reframed** — 18,099 short validations per `twitter` parse, but validating once up front is *not* byte-identical, so that form is rejected |
 | **Sink specialisation** | stringify | fold separators into adjacent writes; write integers and floats into spare capacity | **promoted** — measured **2.6 bytes per sink call** on `citm_catalog`, about 7.3 calls per key; it must win on call count alone, and the count says there is room |
 | Correctly-rounded float parse | float-heavy input | core's Eisel-Lemire, replacing the vendored bignum path | planned, v1.x, opt-in (it changes output) |

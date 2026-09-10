@@ -1,0 +1,8 @@
+# S5 payloads are DATA, keyed by SHA-256 in MANIFEST.md and streamed byte for
+# byte. The root `.gitattributes` already pins `corpus/**/*.json`, but NOT
+# `*.ndjson`, which is the extension this scenario introduces -- and the
+# NDJSON file is ALL line endings, so a `core.autocrlf=true` checkout would
+# add 10,000 carriage returns, change the size, the whitespace census and the
+# hash, and quietly benchmark a different document. `-text` pins both.
+*.json -text
+*.ndjson -text

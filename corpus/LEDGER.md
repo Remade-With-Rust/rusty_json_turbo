@@ -1829,3 +1829,90 @@ This is the first thing in the project measured against S6's actual bar, and
 the honest reading is that it found nothing -- which for a correctness gate is
 the result you want, and is worth far more than the same suite would be if it
 had never been run.
+
+#### Brick B7 LANDED: the reader path gets a window, and the scanners with it
+
+`IoRead` no longer wraps `reader.bytes()`. It holds an 16 KiB window, reads
+into it in 8 KiB blocks, and -- the point -- hands that window to the same wide
+whitespace scanner the slice path uses. Line and column are counted with
+`memchr` when an error asks, not on every byte.
+
+**The gap to `from_slice`, which B7 cannot affect and which therefore serves as
+the in-run control.** 31 pairs, three arms, leading arm rotated, work parity
+asserted before timing.
+
+| file | gap before B7 | gap after | reader gained |
+|---|---:|---:|---:|
+| citm_catalog | 1.55x | **1.22x** | **1.27x** |
+| twitter | 1.28x | **1.14x** | **1.12x** |
+| canada | 1.10x | **1.08x** | 1.02x |
+| s4-frame-telemetry | 1.02x | 1.03x | neutral |
+
+Nothing regressed. The gradient is the whitespace census again: `citm_catalog`
+at 71.0% gains most, `canada` with 33 whitespace bytes in 2.25 MB gains least.
+
+**And `BufReader` is now clearly the wrong thing to do**, where before it was
+merely unhelpful: `twitter` reads 367 MB/s through a bare `&[u8]` and 298
+through a `BufReader`, because it layers a second buffer over the one this
+reader now keeps itself. The documentation on `IoRead::new` was rewritten
+twice in one session for this -- first to split the file case from the
+in-memory case, then again once the buffer landed and made the advice obsolete.
+
+#### Getting there took four measured attempts, and three of them were losses
+
+This is worth recording in full, because each failure was a different lesson
+and the first three all looked like progress.
+
+| attempt | citm | twitter | canada | frame-tel | verdict |
+|---|---:|---:|---:|---:|---|
+| before B7 | 1.55x | 1.28x | 1.10x | 1.02x | the baseline |
+| 1. buffer only | 1.69x | **1.73x** | 1.15x | 1.12x | **worse everywhere** |
+| 2. + wide whitespace scan | 1.32x | 1.27x | **1.32x** | — | citm gains, canada regresses |
+| 3. + register lookahead | 1.27x | 1.24x | 1.16x | 1.10x | closer, two still behind |
+| 4. + tiny entry | **1.22x** | **1.14x** | **1.08x** | 1.03x | **kept** |
+
+1. **A buffer alone made every file worse.** Predictable in hindsight and
+   predicted by the decomposition -- of the 1.55x, only 1.10x was the iterator
+   and 1.41x was the missing scanners -- so paying the buffer's cost without
+   using it as a slice was all cost. It also zeroed 8 KiB per refill via
+   `resize`, as much zeroing as parsing.
+2. **The scanner fixed `citm_catalog` and broke `canada`.** The whitespace-free
+   file gains nothing from a whitespace scanner and pays the buffer for it.
+3. **Serving `peek` from the buffer was the real cost.** A length compare, a
+   bounds-checked index and a store on every call, and `canada.json` makes 2.2
+   million of them. Upstream held the peeked byte in an `Option` in a register;
+   putting that back, ON TOP of the buffer, recovered most of it. The hot path
+   should stay the shape upstream tuned it to; the buffer belongs underneath.
+4. **The refill branch was polluting the hot path**, until `fill` was marked
+   `#[cold]` `#[inline(never)]` -- it happens once per 8 KiB and was sitting in
+   a path taken once per byte. And the scanner still needed **a tiny entry**:
+   on a minified document there is no whitespace at all, so every call was
+   dispatching on the ISA to find its answer at offset zero.
+
+**That tiny entry is the third time this project has needed the same thing.**
+B1s needed a 4-byte scalar peel because 46% of `twitter`'s whitespace runs are
+one byte. M3's escape scanner needed a length guard because `citm_catalog`'s
+mean string is 8.3 bytes, shorter than one vector step. Now the reader's
+whitespace scan needs a one-byte check because minified documents have no
+whitespace to scan.
+
+**The law: a wide scanner must not be reached until something cheap has ruled
+out the common case.** Three bricks, three widths, one shape. It is now the
+first thing to write, not the fix applied after a regression.
+
+#### What held it honest
+
+The contract here is unusually strict -- error line and column, byte offsets,
+and `RawValue` bytes are all observable -- and two gates caught real bugs:
+
+- **`raw_value` broke immediately.** Skipping a whitespace run wholesale
+  skipped feeding those bytes to the raw-value buffer, which `discard` used to
+  do one byte at a time, so `{"foo": 2}` came back as `{"foo":2}`. Upstream's
+  own `test_boxed_raw_value` found it on the first run.
+- **A reader that hands over ONE BYTE PER `read`** was added to
+  `tests/s6_cold_paths.rs` as a third route beside slice and reader. It forces
+  a refill between almost every byte, so every token, escape and line boundary
+  gets split at an arbitrary point. All 7 suites pass on all three routes.
+
+`LineColIterator` is now unreferenced and `src/iter.rs` is deleted -- the whole
+per-byte line-counting apparatus is gone, replaced by `memchr` on demand.

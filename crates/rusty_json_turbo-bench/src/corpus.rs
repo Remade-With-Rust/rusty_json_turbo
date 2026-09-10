@@ -193,7 +193,12 @@ pub fn all_documents() -> Vec<(String, Vec<u8>)> {
         };
         out.push((label, f.load()));
     }
-    for sub in ["jsonchecker", "roundtrip"] {
+    // S5 and S6 join the byte-identical gate here, which is the cheapest
+    // possible registration: no enum variant, no fixture, and the must-FAIL
+    // members are handled exactly as `jsonchecker/fail*.json` already are --
+    // the oracle compares error text with line and column, so a document that
+    // fails identically in both crates is a pass.
+    for sub in ["jsonchecker", "roundtrip", "s5", "s6"] {
         out.extend(json_files_in(&corpus_dir().join(sub), sub));
     }
     out
@@ -205,7 +210,10 @@ pub fn json_files_in(dir: &Path, prefix: &str) -> Vec<(String, Vec<u8>)> {
         .unwrap_or_else(|e| panic!("read_dir {}: {e}", dir.display()))
         .filter_map(Result::ok)
         .map(|e| e.path())
-        .filter(|p| p.extension().is_some_and(|x| x == "json"))
+        // `.ndjson` as well as `.json`, or S5's stream file is SILENTLY
+        // SKIPPED -- a corpus member that is present, listed, and never
+        // actually gated. That failure mode leaves every count looking right.
+        .filter(|p| p.extension().is_some_and(|x| x == "json" || x == "ndjson"))
         .collect();
     names.sort();
     names
