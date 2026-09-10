@@ -1,0 +1,20 @@
+﻿biasvs: reference=C:\Users\talmo\AppData\Local\Temp\claude\bias-b3df966-t\release\rjson-bench.exe (M0 identical source)
+biasvs: current=F:\coding\rusty_json_turbo\target\b-g2\release\rjson-bench.exe
+biasvs: cpu=2 rounds=9 pairs=9 window=200 ms cells='--all'
+
+| file | column | bias (M0 identical source) | reported now | NET (what we changed) |
+|---|---|---:|---:|---:|
+| canada | dom-parse | 0.998x | 0.980x | **1.018x** |
+| canada | dom-stringify | 0.938x | 0.992x | **0.946x** |
+| canada | struct-parse | 1.000x | 0.965x | **1.036x** |
+| canada | struct-stringify | 0.995x | 0.974x | **1.022x** |
+| citm_catalog | dom-parse | 1.004x | 0.920x | **1.091x** |
+| citm_catalog | dom-stringify | 0.920x | 0.890x | **1.034x** |
+| citm_catalog | struct-parse | 0.979x | 0.808x | **1.212x** |
+| citm_catalog | struct-stringify | 0.965x | 0.898x | **1.075x** |
+| twitter | dom-parse | 1.003x | 0.955x | **1.050x** |
+| twitter | dom-stringify | 0.840x | 0.692x | **1.214x** |
+| twitter | struct-parse | 1.001x | 1.013x | **0.988x** |
+| twitter | struct-stringify | 0.807x | 0.654x | **1.234x** |
+
+method: TWO BINARIES interleaved round by round with the leader alternated, each pinned to cpu2/High; each binary runs json-bench bench, which measures its OWN ours arm against its OWN upstream arm in the same window, so each round yields a ratio already normalised against upstream and drift between runs cancels; rounds=9, pairs=9 per run, window=200 ms; statistic=median over rounds of each binary's median paired ratio. bias = the reference's ours/upstream (at M0 the two sources were byte-identical, so this is layout and instantiation alone); NET = bias / current, i.e. what our code changed with the per-cell bias divided out. NET > 1 is a real gain. machine=Intel64 Family 6 Model 183 Stepping 1, GenuineIntel

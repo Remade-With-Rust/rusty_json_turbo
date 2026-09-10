@@ -1,0 +1,12 @@
+﻿biasvs: reference=C:\Users\talmo\AppData\Local\Temp\claude\bias-cf6c2f9-t\release\rjson-bench.exe (cf6c2f9 (S4 registered, pre-M3, pre-B7))
+biasvs: current=F:\coding\rusty_json_turbo\target\b-g2\release\rjson-bench.exe
+biasvs: cpu=2 rounds=7 pairs=9 window=200 ms cells='--cell s4-frame-telemetry,struct-parse --cell s4-frame-telemetry,struct-stringify --cell canada,dom-stringify --cell canada,struct-parse'
+
+| file | column | bias (cf6c2f9 (S4 registered, pre-M3, pre-B7)) | reported now | NET (what we changed) |
+|---|---|---:|---:|---:|
+| canada | dom-stringify | 0.990x | 0.987x | **1.003x** |
+| canada | struct-parse | 0.974x | 0.972x | **1.002x** |
+| s4-frame-telemetry | struct-parse | 1.165x | 1.122x | **1.038x** |
+| s4-frame-telemetry | struct-stringify | 1.085x | 1.107x | **0.980x** |
+
+method: TWO BINARIES interleaved round by round with the leader alternated, each pinned to cpu2/High; each binary runs json-bench bench, which measures its OWN ours arm against its OWN upstream arm in the same window, so each round yields a ratio already normalised against upstream and drift between runs cancels; rounds=7, pairs=9 per run, window=200 ms; statistic=median over rounds of each binary's median paired ratio. bias = the reference's ours/upstream (at M0 the two sources were byte-identical, so this is layout and instantiation alone); NET = bias / current, i.e. what our code changed with the per-cell bias divided out. NET > 1 is a real gain. machine=Intel64 Family 6 Model 183 Stepping 1, GenuineIntel

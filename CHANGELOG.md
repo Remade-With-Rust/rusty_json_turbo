@@ -107,6 +107,37 @@ carry their measured numbers and method line, never an adjective.
   - The fork stays wired and unmodified, with **zero divergences** documented in
     `docs/UPSTREAM-CHANGES.md` and its baseline recorded as the gate any future
     change must clear: 478 passed, 0 failed, 5 ignored at `a874a1b`.
+- **Every ours-vs-upstream figure restated net of instantiation bias**, and the
+  headline gains are smaller than first published. At a commit where our source
+  was **byte-identical** to upstream, the same in-process comparison already
+  read 0.807x on `twitter` struct stringify and 1.004x on `citm_catalog` DOM
+  parse -- two crate instantiations are laid out and inlined differently, and
+  for one whole column that is worth up to 19%.
+  - **The bias is almost entirely in stringify.** Every parse cell's floor sits
+    between 0.979x and 1.004x; three of four stringify cells sit between 0.807x
+    and 0.938x. That is why the raw stringify numbers looked so much better
+    than the raw parse ones.
+  - Net of it: `twitter` struct stringify **1.23x** (was quoted 1.53x), DOM
+    stringify **1.21x** (was 1.43x), `citm_catalog` struct parse **1.21x**
+    (essentially unchanged, it had almost no bias to give back), DOM parse
+    1.09x, struct stringify 1.08x. Ten of twelve cells are still real gains.
+  - **The brick figures are unaffected.** Those are knob A/Bs -- one binary,
+    one crate instance, one environment variable between the arms -- so there is
+    no instantiation difference to bias them.
+  - New tool `tools/biasvs.ps1`: two binaries interleaved round by round, each
+    normalised against its own upstream arm so drift cancels. It also
+    establishes that the bias moves ~5% between reference builds, so the
+    correction carries its own error bar and anything within 5% of 1.00 reads
+    as unchanged.
+- **The unexplained S4 loss is resolved: it is not ours, and our bricks help
+  that cell.** `s4-frame-telemetry` struct parse already read 1.165x the day S4
+  was registered and reads 1.122x now. The decisive test: disabling every brick
+  -- which restores upstream's own whitespace, number and escape loops -- makes
+  the gap **worse**, 1.219x to 1.303x. So the gap is instantiation bias on the
+  largest derive-generated matcher in the corpus, and our bricks are worth
+  **1.069x** on it. G2's "S4 struct parse >= 1.4x" bar cannot be measured by
+  ours-against-upstream on that cell at all, because the bias exceeds the bar;
+  that is recorded rather than quietly dropped.
 - **M3 REVERSED: the SIMD island is off by default, and its own measurement was
   wrong.** M3's A/B compared `RJT_ISA=swar` against `RJT_ISA=sse2` -- two rungs
   **inside** the island -- and reported 1.105x at 61 of 61 wins. Measured

@@ -211,43 +211,55 @@ provably cannot overflow a `u64`, the chunk takes the same branch the
 byte-at-a-time loop would have taken, including the digit at which a long number
 switches to the slow float path.</sub>
 
-**Against upstream serde_json, on the shipping default.** One binary, both
-arms linked, ABBA, 21 pairs, pinned. `> 1` means we are faster.
+**Against upstream serde_json, net of instantiation bias.** The middle column
+is what a naive ours-vs-upstream run reports; the right column is what our code
+actually changed. They differ because two crate instantiations get laid out and
+inlined differently: at a commit where our source was **byte-identical** to
+upstream, the same comparison already read 0.807x on `twitter` struct stringify
+and 1.004x on `citm_catalog` DOM parse. That per-cell floor is divided out
+here.
 
-| file | workload | upstream | rusty_json_turbo | ratio |
-|---|---|---:|---:|---:|
-| twitter | struct stringify | 1,503 MB/s | **2,289 MB/s** | **1.53x** |
-| twitter | DOM stringify | 1,386 MB/s | **2,002 MB/s** | **1.43x** |
-| citm_catalog | scan | 1,881 MB/s | **2,294 MB/s** | **1.22x** |
-| citm_catalog | struct parse | 1,405 MB/s | **1,717 MB/s** | **1.22x** |
-| citm_catalog | DOM stringify | 1,125 MB/s | **1,268 MB/s** | **1.14x** |
-| citm_catalog | struct stringify | 1,916 MB/s | **2,134 MB/s** | **1.12x** |
-| citm_catalog | DOM parse | 715 MB/s | **769 MB/s** | **1.09x** |
-| canada | struct parse | 741 MB/s | 764 MB/s | 1.04x |
-| twitter | DOM parse | 452 MB/s | 469 MB/s | 1.04x |
-| canada | struct stringify | 643 MB/s | 661 MB/s | 1.03x |
-| twitter | struct parse | 934 MB/s | 914 MB/s | 0.99x |
+| file | workload | raw ratio | **net of bias** |
+|---|---|---:|---:|
+| twitter | struct stringify | 1.53x | **1.23x** |
+| twitter | DOM stringify | 1.43x | **1.21x** |
+| citm_catalog | struct parse | 1.22x | **1.21x** |
+| citm_catalog | DOM parse | 1.09x | **1.09x** |
+| citm_catalog | struct stringify | 1.12x | **1.08x** |
+| twitter | DOM parse | 1.04x | **1.05x** |
+| canada | struct parse | 1.04x | **1.04x** |
+| citm_catalog | DOM stringify | 1.14x | **1.03x** |
+| canada | struct stringify | 1.03x | **1.02x** |
+| canada | DOM parse | 1.01x | **1.02x** |
+| twitter | struct parse | 0.99x | **0.99x** |
+| canada | DOM stringify | 1.01x | **~1.00x** |
 
-<sub>Every row above 1.09x won 21 of 21 paired runs. The null-arm floor for the
-session was 0.988x–1.018x.</sub>
+<sub>**The bias is almost entirely in the stringify column** — every parse cell's
+floor sits between 0.979x and 1.004x, while three of four stringify cells sit
+between 0.807x and 0.938x. The serializer is the tighter code path and far more
+sensitive to layout, which is exactly why the raw stringify figures looked so
+much better than the raw parse ones. Measured with `tools/biasvs.ps1`: two
+binaries interleaved round by round, each normalised against its own upstream
+arm so drift cancels; 9 rounds, 9 pairs each, pinned.</sub>
 
-<sub>**Two things this table does not claim.** `twitter` DOM parse is 1.04x and
-we wanted 1.8x: DOM parse makes about one allocation per 31 input bytes, short
-strings dominate the count and `BTreeMap` nodes dominate the bytes, and closing
-that needs a different `Value` type rather than another brick. And `twitter`
-struct parse is at parity: a ceiling probe made key dispatch *completely free*
-and bought 0.6%, so the derive is already near-optimal there. Both are written
-up as architectural in `corpus/LEDGER.md`.</sub>
+<sub>**The correction has its own error bar of about 5%**, because the bias
+itself moves between builds of a reference that should be equivalent. Treat
+anything within 5% of 1.00 as unchanged, and read these to two significant
+figures at most.</sub>
 
-<sub>**The SIMD island was built, measured against upstream, and switched off.**
-Its own A/B had compared two rungs *inside* the island and reported a clean
-1.105x at 61 of 61 wins — while the island was making the crate slower on 13 of
-15 cells. A `#[target_feature]` function cannot be inlined into a caller that
-lacks the feature, so reaching the island puts a non-inlinable call inside the
-whitespace scanner and stops it inlining into the parser's hot loop. The tell
-was `canada`, which holds 33 whitespace bytes in 2.25 MB and still got 1.12x →
-1.34x worse. An A/B is only worth what its baseline is worth, and a baseline
-inside the thing under test is not a baseline.</sub>
+<sub>**The brick figures elsewhere in this README are not affected.** Those come
+from knob A/B runs — one binary, one crate instance, one environment variable
+between the arms — so there is no instantiation difference to bias them. That
+is why this project measures bricks that way.</sub>
+
+<sub>**Two cells are flat and both are understood.** `twitter` struct parse is
+at 0.99x: a ceiling probe made key dispatch *completely free* and bought 0.6%,
+so the derive is already near-optimal and there is nothing there to win. And
+`twitter` DOM parse is 1.05x against an ambition of 1.8x, because DOM parse
+makes roughly one allocation per 31 input bytes — short strings dominate the
+count, map nodes dominate the bytes, and about 80% of every node is unused at a
+median arity of two. Closing that needs a different `Value` type, not another
+brick.</sub>
 
 <sub>**One honest caveat on the absolute MB/s above.** They were taken before
 the corpus was pinned platform-independent. There was no root `.gitattributes`,

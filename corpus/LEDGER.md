@@ -2077,3 +2077,166 @@ and by field construction, not by dispatch.
 parsing**: 1.53x and 1.43x on twitter stringify, 1.22x on citm scan and struct
 parse. Those came from removing redundant work on a slice, and the ceiling
 probes say that seam is now largely worked out.
+
+### 2026-09-10 -- Every ours-vs-upstream number, restated net of instantiation bias
+
+The G2 table published earlier today quoted ours against upstream and called
+the result a gain. It is not one. At M0 our source was BYTE-IDENTICAL to
+upstream and the same comparison already read from 0.807x to 1.004x depending
+on the cell, because two crate instantiations get laid out and inlined
+differently. A gain quoted from that comparison has the bias folded in.
+
+This corrects it, and the correction is large for one whole column.
+
+#### Two kinds of number, and only one of them carries the bias
+
+**A knob A/B compares our code against our code.** One binary, one crate
+instance, one environment variable between the arms. There is no instantiation
+difference to bias it and the layout is identical by construction -- which is
+exactly why this project moved to knobs at M1-A after learning that two BUILDS
+of the same crate differ by 13%.
+
+So the brick numbers -- B1s at 1.345x on citm scan, B4 at 1.083x on canada
+struct-parse, B3 at 1.208x on twitter struct-stringify, B7 closing the reader
+gap from 1.55x to 1.22x -- **do not carry instantiation bias and are not
+restated.** They answer "did this change make our code faster", correctly.
+
+**A knob A/B has its own failure mode, and M3 walked into it**: the off-arm has
+to be the code as it shipped BEFORE the change. M3's off-arm was the island's
+own SWAR rung, already behind a non-inlinable call. A knob whose off-arm lives
+inside the new thing measures the wrong difference.
+
+**An ours-against-upstream number compares two different crate
+instantiations**, and that is where the bias lives. Only the G2 table is of
+that kind.
+
+#### The instrument
+
+`tools/biasvs.ps1`. Two binaries -- a REFERENCE whose library code we did not
+change, and the current one -- interleaved round by round with the leader
+alternated, each pinned. Each binary measures its OWN ours arm against its OWN
+upstream arm in the same window, so each round yields a ratio already
+normalised against upstream and drift between the two runs cancels:
+
+```text
+bias    = reference_ours / reference_upstream     (layout alone)
+current = current_ours   / current_upstream       (what we reported)
+NET     = bias / current                          (what WE changed)
+```
+
+Reference = `b3df966`, the M0 commit, where our source was character-for-
+character upstream's. 9 rounds, 9 pairs per run, 200 ms windows, pinned
+cpu2/High. Raw: `corpus/runs/2026-09-10-bias-s1s3.txt`.
+
+#### The bias is concentrated in ONE column
+
+| cell | bias at M0 (identical source) |
+|---|---:|
+| twitter struct-stringify | **0.807x** |
+| twitter dom-stringify | **0.840x** |
+| citm_catalog dom-stringify | **0.920x** |
+| canada dom-stringify | **0.938x** |
+| citm_catalog struct-stringify | 0.965x |
+| citm_catalog struct-parse | 0.979x |
+| canada struct-parse | 1.000x |
+| twitter struct-parse | 1.001x |
+| canada struct-stringify | 0.995x |
+| twitter dom-parse | 1.003x |
+| citm_catalog dom-parse | 1.004x |
+| canada dom-parse | 0.998x |
+
+**Every parse cell sits between 0.979x and 1.004x. Every stringify cell but one
+sits between 0.807x and 0.965x.** The serializer is the smaller, tighter code
+path and is far more sensitive to how the two instantiations get laid out. That
+is the whole reason the reported stringify figures looked so much better than
+the reported parse figures.
+
+#### Restated: what our code actually changed
+
+| cell | reported | bias | **NET** |
+|---|---:|---:|---:|
+| twitter struct-stringify | 1.53x | 0.807x | **1.234x** |
+| twitter dom-stringify | 1.43x | 0.840x | **1.214x** |
+| citm_catalog struct-parse | 1.22x | 0.979x | **1.212x** |
+| citm_catalog dom-parse | 1.09x | 1.004x | **1.091x** |
+| citm_catalog struct-stringify | 1.12x | 0.965x | **1.075x** |
+| twitter dom-parse | 1.04x | 1.003x | **1.050x** |
+| canada struct-parse | 1.04x | 1.000x | **1.036x** |
+| citm_catalog dom-stringify | 1.14x | 0.920x | **1.034x** |
+| canada struct-stringify | 1.03x | 0.995x | **1.022x** |
+| canada dom-parse | 1.01x | 0.998x | **1.018x** |
+| twitter struct-parse | 0.99x | 1.001x | **0.988x** |
+| canada dom-stringify | 1.01x | 0.938x | **0.946x** (see below) |
+
+**The honest headline is 1.21x to 1.23x on twitter stringify and 1.21x on citm
+struct parse, not 1.43x and 1.53x.** Ten of twelve cells are still genuine
+gains; they are just smaller, and the ordering changes -- `citm_catalog`
+struct-parse turns out to be one of the best cells, not a middling one, because
+it had almost no bias to give back.
+
+`twitter` struct-parse at 0.988x confirms from a second direction what M4's
+ceiling probe found: there is no gain there, and free key dispatch was worth
+0.6%.
+
+#### The bias itself is build-dependent, so the correction has its own error bar
+
+`canada` dom-stringify reads a bias of **0.938x** in M0's build. Measured
+against a different reference build (`cf6c2f9`) the same cell reads **0.990x**,
+and B3 cannot account for the difference -- `canada` holds 90 string bytes in
+2.25 MB, so the escape brick does nothing there.
+
+So the bias for a given cell is not one number; it moves by about 5% between
+builds of a reference that should be equivalent. **That means the netted
+figures carry roughly 5% of their own uncertainty, and `canada` dom-stringify's
+0.946x must NOT be called a regression** -- referenced to `cf6c2f9` the same
+cell is 1.003x. It is flat, within the noise of the correction.
+
+The two-decimal precision in the table above is what the arithmetic produces,
+not what the method can resolve. Anything inside about 5% of 1.00 should be
+read as "unchanged".
+
+### 2026-09-10 -- The S4 loss is not ours, and the bricks help that cell
+
+Two `s4-frame-telemetry` cells were reported this morning as losing ~1.14x with
+the cause unexplained and every brick exonerated by a knob toggle. Both
+questions are now closed, and the answer is the same phenomenon as above.
+
+**It predates everything we did.** Measured against `cf6c2f9`, the commit that
+registered S4, with the same interleaved instrument. Raw:
+`corpus/runs/2026-09-10-bias-s4.txt`.
+
+| cell | at cf6c2f9 | now | net change |
+|---|---:|---:|---:|
+| s4-frame-telemetry struct-parse | **1.165x** | 1.122x | **1.038x** (better) |
+| s4-frame-telemetry struct-stringify | 1.085x | 1.107x | 0.980x |
+| canada dom-stringify | 0.990x | 0.987x | 1.003x |
+| canada struct-parse | 0.974x | 0.972x | 1.002x |
+
+The cell already read 1.165x the day it was registered, and it reads slightly
+BETTER now.
+
+**And the decisive test: disable every brick, which restores upstream's own
+loops on our hot paths, and the gap gets WORSE.**
+
+| cell | all bricks ON | all bricks OFF |
+|---|---:|---:|
+| s4-frame-telemetry struct-parse | 1.219x | **1.303x** |
+| s4-frame-telemetry struct-stringify | 1.112x | 1.104x |
+| twitter struct-parse | 1.065x | 1.101x |
+
+With `RJT_WS_FASTPATH=0 RJT_NUM_WIDE=0 RJT_ESC_WIDE=0` our whitespace, number
+and escape paths are the loops upstream ships. The gap on that cell is then
+**1.303x** -- larger than with our bricks on. So the gap is not our code, and
+our bricks are worth **1.069x** on the very cell that was reported as a loss.
+
+The residual is instantiation bias for a high-arity derived fixture: 18 fields
+across 2,600 records, whose derive-generated code is by far the largest in the
+harness. The measured bias range for other cells reaches 0.807x, so a 1.30x
+bias on the biggest generated matcher in the corpus is well inside what this
+comparison has already been shown to produce.
+
+**What this means for G2's S4 bar.** "S4 struct parse >= 1.4x" cannot be
+measured by ours-against-upstream on that cell at all: the bias is larger than
+the bar. Either the bar needs a bias-netted definition, or S4's standing has to
+be quoted from a knob A/B against our own previous code -- which says our
+bricks give it 1.069x. Recorded rather than quietly dropped.
