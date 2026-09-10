@@ -74,9 +74,14 @@ fn first_non_ws_swar(slice: &[u8], from: usize) -> usize {
 
 // ------------------------------------------------------------- SSE2 (16 B)
 
+// `unsafe fn`, not a safe fn with `#[target_feature]`. Applying that attribute
+// to a SAFE function is the `target_feature_11` feature, stable only from Rust
+// 1.86, and this workspace's MSRV is 1.85 -- so the pre-1.86 spelling is the
+// portable one. The caller's obligation is unchanged and stated at each call
+// site: the target feature must be present.
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "sse2")]
-fn first_non_ws_sse2(slice: &[u8], from: usize) -> usize {
+unsafe fn first_non_ws_sse2(slice: &[u8], from: usize) -> usize {
     use core::arch::x86_64::{
         _mm_cmpeq_epi8, _mm_loadu_si128, _mm_movemask_epi8, _mm_or_si128, _mm_set1_epi8,
     };
@@ -116,7 +121,7 @@ fn first_non_ws_sse2(slice: &[u8], from: usize) -> usize {
 
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
-fn first_non_ws_avx2(slice: &[u8], from: usize) -> usize {
+unsafe fn first_non_ws_avx2(slice: &[u8], from: usize) -> usize {
     use core::arch::x86_64::{
         _mm256_cmpeq_epi8, _mm256_loadu_si256, _mm256_movemask_epi8, _mm256_or_si256,
         _mm256_set1_epi8,

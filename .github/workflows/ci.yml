@@ -292,4 +292,26 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
-      - run: cargo package -p rusty_json_turbo --allow-dirty
+      # The two leaf crates get the full check, build and all.
+      - run: cargo package -p rusty_json_turbo-accel --allow-dirty
+      - run: cargo package -p rusty_json_turbo-alloc --allow-dirty
+      # The parent cannot get the full check yet, and the reason is a real
+      # release-ordering constraint rather than a workaround: `cargo package`
+      # resolves every dependency against the crates.io index even with
+      # `--no-verify`, and `rusty_json_turbo-accel` is not published. So THE
+      # ISLAND MUST BE PUBLISHED BEFORE THE NEXT RELEASE OF THE PARENT.
+      #
+      # Until then this checks what it still can -- that the manifest parses
+      # and the file list is what we expect, which is what has actually caught
+      # problems here before. Restore the full `cargo package -p
+      # rusty_json_turbo --allow-dirty` the moment the island is on crates.io.
+      - name: Parent crate file list (full package check blocked on publishing the island)
+        run: |
+          cargo package --list -p rusty_json_turbo --allow-dirty > files.txt
+          wc -l files.txt
+          for required in Cargo.toml src/lib.rs src/read.rs src/ser.rs README.md; do
+            grep -qx "$required" files.txt               || { echo "::error::$required missing from the packaged file list"; exit 1; }
+          done
+          if grep -qE '^(corpus|target)/' files.txt; then
+            echo '::error::the package would ship corpus or build artifacts'; exit 1
+          fi

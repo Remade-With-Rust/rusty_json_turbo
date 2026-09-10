@@ -1505,6 +1505,20 @@ have missed it entirely: every kernel was correct, and the composition was not.
   `aarch64-unknown-linux-musl` and `x86_64-unknown-linux-gnu` with
   `--no-default-features`, falling back to SWAR where there is no x86.
 
+#### One release-ordering consequence, recorded so it is not rediscovered
+
+`rusty_json_turbo` now depends on `rusty_json_turbo-accel`, and `cargo package`
+resolves every dependency against the crates.io index **even with
+`--no-verify`**. So **the island must be published before the next release of
+the parent**, or the release will fail at the packaging step rather than at the
+upload.
+
+CI now packages the two leaf crates in full and checks the parent's manifest
+and file list instead, asserting that the crate would ship `src/lib.rs`,
+`src/read.rs`, `src/ser.rs` and `README.md`, and would NOT ship the corpus or
+any build output. The full check comes back the moment the island is on
+crates.io.
+
 #### One instrument note
 
 Every method line now carries `isa=<rung> (machine offers <ceiling>)`. The two

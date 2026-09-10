@@ -71,7 +71,7 @@ fn first_escape_swar(bytes: &[u8], from: usize) -> usize {
 
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "sse2")]
-fn first_escape_sse2(bytes: &[u8], from: usize) -> usize {
+unsafe fn first_escape_sse2(bytes: &[u8], from: usize) -> usize {
     use core::arch::x86_64::{
         _mm_and_si128, _mm_cmpeq_epi8, _mm_loadu_si128, _mm_movemask_epi8, _mm_or_si128,
         _mm_set1_epi8, _mm_setzero_si128,
@@ -109,7 +109,7 @@ fn first_escape_sse2(bytes: &[u8], from: usize) -> usize {
 
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
-fn first_escape_avx2(bytes: &[u8], from: usize) -> usize {
+unsafe fn first_escape_avx2(bytes: &[u8], from: usize) -> usize {
     use core::arch::x86_64::{
         _mm256_and_si256, _mm256_cmpeq_epi8, _mm256_loadu_si256, _mm256_movemask_epi8,
         _mm256_or_si256, _mm256_set1_epi8, _mm256_setzero_si256,
