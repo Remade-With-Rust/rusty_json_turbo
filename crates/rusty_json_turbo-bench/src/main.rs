@@ -58,6 +58,7 @@ fn main() -> ExitCode {
         "probe" => probe(&args[1..]),
         "work" => work(&args[1..]),
         "latency" => latency(&args[1..]),
+        "b6" => b6(&args[1..]),
         "diff-oracle" => diff_oracle(&args[1..]),
         "list" => {
             for f in File::EVERY {
@@ -582,6 +583,202 @@ fn latency(args: &[String]) -> ExitCode {
             mbps
         );
     }
+    ExitCode::SUCCESS
+}
+
+/// THE B6 CEILING PROBE: what would key dispatch cost if it were free?
+///
+/// Brick B6 (key matching on the JSON side) and B6h (hand a field INDEX across
+/// the serde seam instead of a string) are both gated on one number, and the
+/// mission plan says how to get it: stub key matching with an index lookup and
+/// see what comes back. `b6_probe::FrameTelemetryFast` is that stub -- the same
+/// fields, the same types, the same wire names, dispatching on a length and one
+/// or two bytes with no string comparison at all.
+///
+/// Paired and interleaved in ONE process with the lead alternating, so the two
+/// arms cannot differ by code layout, and the statistic is the min per
+/// iteration in each window, as everywhere else in this harness.
+///
+/// It reports a CEILING. The fast matcher does not verify the whole key, so a
+/// real brick would have to do more and would be slower. The right reading is
+/// "key dispatch cannot be worth more than this".
+fn b6(args: &[String]) -> ExitCode {
+    let mut pairs = 21usize;
+    let mut window_ms = 250u64;
+    let mut i = 0;
+    while i < args.len() {
+        let a = args[i].as_str();
+        i += 1;
+        match a {
+            "--pairs" | "--window-ms" => {
+                let Some(v) = args.get(i).map(String::as_str) else {
+                    eprintln!("error: {a} needs a value");
+                    return ExitCode::from(2);
+                };
+                let Ok(parsed) = v.parse::<u64>() else {
+                    eprintln!("error: {a}: {v:?} is not a number");
+                    return ExitCode::from(2);
+                };
+                if a == "--pairs" {
+                    pairs = parsed as usize;
+                } else {
+                    window_ms = parsed;
+                }
+                i += 1;
+            }
+            // Accepted and recorded by the pinning wrapper, not used here.
+            "--pinned" | "--commit" => i += 1,
+            other => {
+                eprintln!("error: unknown option {other:?}");
+                return ExitCode::from(2);
+            }
+        }
+    }
+
+    let input = File::S4FrameTelemetry.load();
+
+    // WORK PARITY FIRST. A timing comparison between two paths that built
+    // different values would be meaningless, so the two are checked equal on
+    // the real document before anything is timed.
+    {
+        let derived: rjt_bench::s4_frame_telemetry::FrameTelemetry =
+            turbo::from_slice(&input).expect("derived parse");
+        let fast: rjt_bench::b6_probe::FrameTelemetryFast =
+            turbo::from_slice(&input).expect("fast parse");
+        assert_eq!(
+            derived.frames.len(),
+            fast.frames.len(),
+            "the two paths disagreed on frame count"
+        );
+        for (d, f) in derived.frames.iter().zip(&fast.frames) {
+            assert!(
+                d.n == f.n
+                    && d.pts == f.pts
+                    && d.dts == f.dts
+                    && d.qp.to_bits() == f.qp.to_bits()
+                    && d.bits == f.bits
+                    && d.psnr_y.to_bits() == f.psnr_y.to_bits()
+                    && d.ssim.to_bits() == f.ssim.to_bits()
+                    && d.mb_i == f.mb_i
+                    && d.mb_skip == f.mb_skip
+                    && d.satd == f.satd
+                    && d.refs == f.refs
+                    && d.ms.to_bits() == f.ms.to_bits(),
+                "the two paths built different values for frame {}",
+                d.n
+            );
+        }
+        println!(
+            "work parity: {} frames, every checked field equal in both paths",
+            derived.frames.len()
+        );
+    }
+
+    let window = Duration::from_millis(window_ms);
+    let mut ratios: Vec<f64> = Vec::with_capacity(pairs);
+    let mut derived_ns: Vec<u64> = Vec::with_capacity(pairs);
+    let mut fast_ns: Vec<u64> = Vec::with_capacity(pairs);
+
+    fn run_derived(input: &[u8]) -> u64 {
+        let t = Instant::now();
+        let v: rjt_bench::s4_frame_telemetry::FrameTelemetry = turbo::from_slice(input).unwrap();
+        let ns = t.elapsed().as_nanos() as u64;
+        std::hint::black_box(&v);
+        ns
+    }
+    fn run_fast(input: &[u8]) -> u64 {
+        let t = Instant::now();
+        let v: rjt_bench::b6_probe::FrameTelemetryFast = turbo::from_slice(input).unwrap();
+        let ns = t.elapsed().as_nanos() as u64;
+        std::hint::black_box(&v);
+        ns
+    }
+    let sample = |f: fn(&[u8]) -> u64, input: &[u8]| -> u64 {
+        let start = Instant::now();
+        let mut best = u64::MAX;
+        let mut n = 0;
+        loop {
+            best = best.min(f(input));
+            n += 1;
+            if n >= 3 && start.elapsed() >= window {
+                break;
+            }
+        }
+        best
+    };
+
+    for p in 0..pairs {
+        // ABBA: alternate which arm leads, so drift cannot settle on one.
+        let (d, f) = if p % 2 == 0 {
+            let d = sample(run_derived, &input);
+            (d, sample(run_fast, &input))
+        } else {
+            let f = sample(run_fast, &input);
+            (sample(run_derived, &input), f)
+        };
+        derived_ns.push(d);
+        fast_ns.push(f);
+        ratios.push(d as f64 / f as f64);
+    }
+
+    ratios.sort_by(f64::total_cmp);
+    derived_ns.sort_unstable();
+    fast_ns.sort_unstable();
+    let median = ratios[ratios.len() / 2];
+    let wins = ratios.iter().filter(|&&r| r > 1.0).count();
+    let n = ratios.len() as f64;
+    let z = (wins as f64 - n / 2.0) / (0.5 * n.sqrt());
+    let mbps = |ns: u64| input.len() as f64 / ns as f64 * 1e3;
+
+    println!();
+    println!(
+        "{:<26} {:>12} {:>12} {:>12} {:>12}",
+        "arm", "median ns", "MB/s", "best ns", "best MB/s"
+    );
+    println!(
+        "{:<26} {:>12} {:>12.0} {:>12} {:>12.0}",
+        "derive (match on &str)",
+        derived_ns[derived_ns.len() / 2],
+        mbps(derived_ns[derived_ns.len() / 2]),
+        derived_ns[0],
+        mbps(derived_ns[0])
+    );
+    println!(
+        "{:<26} {:>12} {:>12.0} {:>12} {:>12.0}",
+        "free dispatch (CEILING)",
+        fast_ns[fast_ns.len() / 2],
+        mbps(fast_ns[fast_ns.len() / 2]),
+        fast_ns[0],
+        mbps(fast_ns[0])
+    );
+    println!();
+    println!(
+        "CEILING: derive/free = {:.3}x  [{:.3}, {:.3}]  {}/{} pairs, z = {:+.2}   best-of-N {:.3}x",
+        median,
+        ratios[0],
+        ratios[ratios.len() - 1],
+        wins,
+        pairs,
+        z,
+        derived_ns[0] as f64 / fast_ns[0] as f64
+    );
+    println!(
+        "method: in-process paired A/B, one binary, ABBA with the lead alternated; pairs={}; \
+         window={} ms per arm-sample, statistic=min per-iteration time in the window; \
+         verdict=median of paired ratios + wins with z, and a best-of-N that noise can only \
+         inflate; work parity asserted field-by-field before timing; \
+         document=s4-frame-telemetry ({} bytes, 46,816 keys, 18 per object, the highest key \
+         density in the corpus); isa={}; allocator={}",
+        pairs,
+        window_ms,
+        input.len(),
+        turbo::counters::isa(),
+        alloc_arm::name()
+    );
+    println!(
+        "NOTE: the free arm does NOT verify whole keys, so this is an UPPER BOUND on what any \
+         correct brick could win, not a prediction for one."
+    );
     ExitCode::SUCCESS
 }
 

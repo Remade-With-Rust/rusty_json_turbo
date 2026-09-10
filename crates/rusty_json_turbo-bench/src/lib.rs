@@ -50,6 +50,9 @@ pub mod twitter;
 // S4, the house payloads. One module per document, each doc-commented with the
 // serde path it puts under measurement -- `flatten` tails, internally-tagged
 // enums, `Vec<u8>` fields and high-arity field matchers that S1-S3 never enter.
+// The B6 ceiling probe: the same fields with a hand-written field dispatch,
+// so "what if key matching were free" is a measurement rather than a guess.
+pub mod b6_probe;
 pub mod s4_frame_telemetry;
 pub mod s4_media_probe;
 pub mod s4_node_config;

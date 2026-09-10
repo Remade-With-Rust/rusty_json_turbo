@@ -1,0 +1,9 @@
+work parity: 2600 frames, every checked field equal in both paths
+
+arm                           median ns         MB/s      best ns    best MB/s
+derive (match on &str)          1605500          372      1526800          391
+free dispatch (CEILING)         1613400          370      1574500          379
+
+CEILING: derive/free = 1.006x  [0.840, 1.052]  29/41 pairs, z = +2.65   best-of-N 0.970x
+method: in-process paired A/B, one binary, ABBA with the lead alternated; pairs=41; window=250 ms per arm-sample, statistic=min per-iteration time in the window; verdict=median of paired ratios + wins with z, and a best-of-N that noise can only inflate; work parity asserted field-by-field before timing; document=s4-frame-telemetry (596826 bytes, 46,816 keys, 18 per object, the highest key density in the corpus); isa=sse2; allocator=system
+NOTE: the free arm does NOT verify whole keys, so this is an UPPER BOUND on what any correct brick could win, not a prediction for one.

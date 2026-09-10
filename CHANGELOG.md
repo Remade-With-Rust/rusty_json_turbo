@@ -46,6 +46,37 @@ carry their measured numbers and method line, never an adjective.
   and **deterministic work counters** (`rjson-bench work`, library feature
   `profile`) with an `RJT_*` A/B knob (feature `knobs`) so two implementations
   can be compared inside one binary rather than across two code layouts.
+- **M4 resolved: the serde fork does not earn its keep**, and all three of its
+  bricks are retired on evidence rather than left open.
+  - **B6 and B6h refuted by a ceiling probe.** A hand-written field dispatch
+    that uses no string comparison at all -- the field names separate perfectly
+    on length plus one or two bytes -- was measured against the derive on the
+    corpus's most key-dense document (46,816 keys, 18 per object, 78.4 keys per
+    KB). Making key dispatch **completely free** is worth **1.006x by the median
+    and 0.970x by best-of-N** over 41 pairs: the two statistics disagree, so the
+    cell is unresolved at six tenths of one percent. B6h was the most invasive
+    change contemplated anywhere in this project, spanning both forks, and it
+    was retired before a line of it was written.
+  - **The assembly says the same thing.** The emitted-asm census, pointed at the
+    harness library to close the coverage gap M1-C recorded, finds **20
+    `memcmp` calls across 111 derive-generated `visit_str` bodies**, and most
+    have none: `rustc` lowers a `match` on `&str` into a switch on length and
+    then inline byte comparisons. The derive is already near-optimal, so there
+    was nothing to remove.
+  - **B14 refuted by a test, not a benchmark.** `deserialize_in_place` has a
+    default body, so an impl that is never called is indistinguishable from one
+    that is. A type whose in-place impl **panics** parses cleanly through
+    `from_slice`, `from_str`, `from_reader` and `Deserializer::into_iter`, so
+    nothing reaches it. It needs a reuse entry point that does not exist.
+  - **B6d measured and declined.** The derive's identifier code is 58,416
+    `llvm-lines`, 5.04% of the harness crate, and `visit_str` and `visit_bytes`
+    are near-duplicates of which serde_json never calls the second. A shared
+    matcher would remove about 1.2% of the crate's lines, pre-dead-code
+    elimination, with no runtime claim -- not enough to justify tracking a
+    `serde_derive` fork indefinitely.
+  - The fork stays wired and unmodified, with **zero divergences** documented in
+    `docs/UPSTREAM-CHANGES.md` and its baseline recorded as the gate any future
+    change must clear: 478 passed, 0 failed, 5 ignored at `a874a1b`.
 - **M3: the SIMD island.** A new crate, `rusty_json_turbo-accel`, carrying SSE2
   and AVX2 twins of the whitespace and escape scanners. It is the one crate in
   the workspace where `unsafe` is allowed, so the parser itself never writes it

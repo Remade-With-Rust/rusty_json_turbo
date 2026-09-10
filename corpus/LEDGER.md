@@ -1525,3 +1525,194 @@ Every method line now carries `isa=<rung> (machine offers <ceiling>)`. The two
 are printed separately on purpose: a run narrowed by an override and a run on a
 machine with nothing wider produce the same number for very different reasons,
 and a ledger row that cannot tell them apart is not evidence.
+
+### 2026-09-10 -- M4: the B6 ceiling probe, and three bricks it retires
+
+M4 is the milestone where the serde fork is supposed to earn its keep, and its
+headline speed work was B6 (match object keys on the JSON side) and B6h (hand a
+field INDEX across the serde seam instead of a string). Both were gated on one
+measurement the plan spelled out: stub key matching with an index lookup and
+see what comes back. That probe is now built and run, and the answer is that
+there is nothing there.
+
+#### The probe
+
+`b6_probe::FrameTelemetryFast` has the same fields, the same types and the same
+wire names as the derived fixture. The only difference is how a key becomes a
+field: the derive emits `match __value { "n" => ..., "pts" => ... }`, which
+lowers to a length switch and a chain of `memcmp`; the probe dispatches on the
+length and one or two individual bytes with **no string comparison anywhere**.
+
+The eighteen field names separate perfectly that way, which is what makes this
+a true ceiling rather than merely a faster matcher:
+
+```text
+len 1  n t                       -> byte 0
+len 2  qp ms                     -> byte 0
+len 3  pts dts cpb ref           -> byte 0
+len 4  bits ssim satd mb_i mb_p mb_b
+                                 -> byte 0, then byte 1 for s*, byte 3 for mb_*
+len 6  psnr_y psnr_u psnr_v      -> byte 5
+len 7  mb_skip                   -> unique
+```
+
+`s4-frame-telemetry.json` is the right document and deliberately the most
+favourable one in the corpus: 2,600 objects sharing one exact 18-key tuple,
+**46,816 keys at 78.4 keys/KB**, 33 distinct names reused 1,418 times each. If
+key dispatch cannot be shown to matter here it cannot matter anywhere.
+
+Work parity is asserted field by field over all 2,600 frames before anything is
+timed, so the two arms provably build the same values.
+
+#### The result: the ceiling is zero
+
+In-process paired A/B, one binary, ABBA with the lead alternated, 41 pairs,
+250 ms windows, pinned. Raw: `corpus/runs/2026-09-10-m4-b6-ceiling.txt`.
+
+| arm | median | MB/s | best | best MB/s |
+|---|---:|---:|---:|---:|
+| derive (`match` on `&str`) | 1,605,500 ns | 372 | 1,526,800 ns | 391 |
+| free dispatch (**ceiling**) | 1,613,400 ns | 370 | 1,574,500 ns | 379 |
+
+**derive / free = 1.006x, 29/41 pairs, z = +2.65, best-of-N 0.970x.**
+
+The two statistics disagree in sign, which by this project's own rule means the
+cell is unresolved rather than a small win -- and an unresolved cell at 0.6% is
+indistinguishable from nothing. Making key dispatch **completely free** on the
+most key-dense document in the corpus buys, at most, six tenths of one percent.
+
+#### What that retires
+
+- **B6 (key dispatch on the JSON side): REFUTED.** There is no headroom to
+  claim.
+- **B6h (field-index handshake across the serde seam): REFUTED, and this is the
+  one that matters.** The plan said it "lands only if it clears the floor on S1
+  AND S4". There is no floor to clear. It was also the most invasive change
+  contemplated anywhere in this project -- a hidden `__visit_field_index`
+  method, a per-`FIELDS` lookup built once per `deserialize_struct`, and a
+  fallback path for aliases and unknown keys, spanning both forks. All of that
+  is now unnecessary, on evidence, before any of it was written.
+- **S1 is bounded by the same number without a second probe.** `twitter` has
+  13,345 keys in 631,514 bytes, **21.1 keys/KB**, against frame-telemetry's
+  78.4 -- 3.7x less key-dense. A ceiling of 0.6% on the dense file bounds the
+  sparse one below 0.2%.
+
+#### Why it is zero, which is worth knowing before the next such idea
+
+Rust's `match` on `&str` is not a linear string search. It lowers to a switch
+on length and then, within a length class, comparisons on the bytes -- for keys
+of one to seven bytes those are a couple of instructions each. **The derive is
+already close to the cheapest dispatch the field set admits.** 46,816 keys at a
+handful of cycles each is on the order of a quarter of a million cycles against
+a parse that takes about five million, and the probe removes only part of that.
+
+The general form, and it is the same shape as three earlier refutations in this
+ledger: a step that looks like a lot of work because it happens a lot of times
+can still be a small fraction of the total, and only measurement distinguishes
+those two. B4x removed 443,936 `peek` calls and was slower. B15 removed 36.6%
+of sink calls and was 11% slower. B10 died at the census. B6h dies at the
+ceiling probe, having cost one afternoon instead of a fork of `serde_derive`.
+
+#### The assembly says the same thing, which makes it three probes
+
+The emitted-asm census was pointed at the BENCH library this time -- the one
+that actually contains derive-generated code, the coverage gap the M1-C census
+recorded and could not close. Across **111 `__FieldVisitor::visit_str` bodies**:
+
+| | count |
+|---|---:|
+| instructions, all 111 bodies | 10,757 |
+| calls | 54 |
+| **of which `memcmp` / `bcmp`** | **20** |
+| inline compare / test instructions | 477 |
+| jump tables | 0 |
+
+**Twenty `memcmp` calls in total, and most matchers have none.** The largest --
+`twitter`'s 40-field `User` -- is 412 instructions with 6 `memcmp` and 30 inline
+compares. `rustc` is not emitting a linear string search: it lowers `match &str`
+into a switch on length and then INLINE byte and word comparisons, reaching for
+`memcmp` only on a few longer keys.
+
+So the derive already emits close to the cheapest dispatch the field set
+admits. The clock said the ceiling was 0.6%; the instruction count says why.
+
+#### B14 (`deserialize_in_place` for `Vec<Struct>`): REFUTED, and by a test
+
+B14 asks whether the derive's in-place path pays. It cannot pay if nothing
+calls it, and that is a question about reachability rather than speed -- so it
+is answered by `tests/b14_reachability.rs` rather than by a benchmark.
+
+`Deserialize::deserialize_in_place` has a DEFAULT body, so an impl that is
+never called looks exactly like one that is. The test gives a type whose
+in-place impl **panics**, then parses it through every entry point this crate
+has: `from_slice`, `from_str`, `from_reader`, and `Deserializer::into_iter`.
+None of them reaches it.
+
+That is decisive by construction: `from_slice` calls `T::deserialize`, and
+there is **no public function on this crate that deserializes INTO an existing
+value**. Enabling the feature can therefore only add generated code and never
+remove work. Turning it on and re-measuring `llvm-lines` confirmed the
+direction with nothing to show for it: 1,159,484 against 1,159,476, +8 lines.
+
+B14 becomes worth re-measuring the day a reuse entry point exists -- a
+`from_slice_into(&mut T)` or similar -- which is a NEW PUBLIC API and belongs
+with the streaming work at S5, not here. The test asserts the entry-point list
+so it fails loudly if that day arrives.
+
+#### B6d (one shared identifier matcher): measured, and not worth a fork alone
+
+B6d is the one M4 brick that was never a speed claim. The plan files it under
+code size, with the exit test "S9 `llvm-lines` <= upstream".
+
+Measured: the derive's identifier code is **58,416 llvm lines, 5.04%** of the
+bench library.
+
+| generated method | llvm lines |
+|---|---:|
+| `deserialize_identifier` plumbing, per `__FieldVisitor` | 25,550 |
+| `visit_str` | 15,578 |
+| **`visit_bytes`** | **13,158** |
+| `visit_u64` | 1,706 |
+| `visit_borrowed_str` | 710 |
+| `expecting` | 234 |
+| `visit_borrowed_bytes` | 92 |
+
+`visit_str` and `visit_bytes` are near-duplicates of each other -- the same
+match, once on `&str` and once on `&[u8]` -- and **serde_json never calls
+`visit_bytes` at all**. Collapsing the four into one shared matcher plus thin
+wrappers would remove on the order of 13,500 llvm lines, about **1.2% of the
+crate**.
+
+That is real but it is a compile-time figure, not a runtime one: `llvm-lines`
+counts what is submitted to LLVM, before dead-code elimination, so the binary
+effect is smaller again. And the asm count above puts the whole population at
+10,757 instructions.
+
+#### M4's verdict: the serde fork does NOT earn its keep
+
+The milestone was written as a conditional -- "the serde fork earns its keep" --
+and the answer is no, on evidence, with all three of its bricks settled:
+
+| brick | verdict | evidence |
+|---|---|---|
+| B6 (JSON-side key dispatch) | **REFUTED** | ceiling 1.006x median / 0.970x best-of-N at 41 pairs |
+| B6h (field-index handshake across the seam) | **REFUTED** | no floor to clear; the most invasive change in the plan, avoided |
+| B14 (`deserialize_in_place`) | **REFUTED** | unreachable through every entry point, proven by test |
+| B6d (shared matcher) | **not worth a fork alone** | 1.2% of llvm lines, pre-DCE, no runtime claim |
+
+So the fork stays exactly where it is: `Remade-With-Rust/serde` branch `turbo`,
+unmodified at `a874a1b`, consumed through `[patch.crates-io]` and carrying
+**zero divergences**. Keeping the patch wired costs nothing and means a future
+finding can be acted on the same day it appears; forking `serde_derive` for a
+1.2% compile-time figure would mean tracking upstream and keeping serde's own
+478-test suite plus 118 ui tests plus Miri green, permanently, for no measured
+speed at all.
+
+The fork's baseline is recorded so any future change has a gate to clear:
+**478 passed, 0 failed, 5 ignored** on `cargo test --workspace` at `a874a1b`.
+
+What this milestone bought is the three refutations, and the largest of them
+never had to be written. B6h spanned both forks -- a hidden
+`__visit_field_index`, a per-`FIELDS` lookup built once per
+`deserialize_struct`, an alias and unknown-key fallback -- and one afternoon's
+probe retired it. That is the milestone working as intended rather than failing.

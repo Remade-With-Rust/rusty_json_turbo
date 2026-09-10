@@ -60,6 +60,39 @@ have fired over that span. Output, errors and float bits are unchanged and the
 oracle gates it. There is deliberately **no four-digit variant**; the comment in
 `parse_decimal` records why, and `corpus/LEDGER.md` records the measurements.
 
+## The serde fork: ZERO divergences, and that is a decision
+
+`Remade-With-Rust/serde` branch `turbo` sits at `a874a1b`, **unmodified**, and
+is consumed through `[patch.crates-io]`. It carries no changes at all, which is
+the recorded outcome of milestone M4 rather than an unfinished state.
+
+M4 was written as a conditional -- "the serde fork earns its keep" -- with three
+bricks. All three are now measured and none of them justifies a change:
+
+| brick | verdict | evidence |
+|---|---|---|
+| B6, key dispatch on the JSON side | **refuted** | ceiling probe: 1.006x median, 0.970x best-of-N, 41 pairs, on the corpus's most key-dense document |
+| B6h, field-index handshake across the seam | **refuted** | no floor to clear; it was the most invasive change contemplated anywhere in this project and was never written |
+| B14, derive `deserialize_in_place` | **refuted** | unreachable: a panicking in-place impl is never called through `from_slice`, `from_str`, `from_reader` or `Deserializer::into_iter` |
+| B6d, one shared identifier matcher | **not worth a fork alone** | 1.2% of `llvm-lines`, pre-dead-code-elimination, with no runtime claim |
+
+The mechanism behind the first two is worth keeping: `rustc` lowers a
+`match` on `&str` into a switch on length and then INLINE byte comparisons.
+Across 111 derive-generated `visit_str` bodies in the harness there are **twenty
+`memcmp` calls in total**, and most matchers have none. The derive already emits
+close to the cheapest dispatch a field set admits, so there is nothing for a
+JSON-side matcher or a seam handshake to remove.
+
+**Why the patch stays wired anyway.** It costs nothing to keep and means a
+future finding can be acted on the day it appears. Forking `serde_derive` for a
+1.2% compile-time figure would mean tracking upstream indefinitely and keeping
+serde's own suite green forever, for no measured speed.
+
+**The gate any future change must clear**, recorded at `a874a1b`:
+`cargo test --workspace` on the fork is **478 passed, 0 failed, 5 ignored**.
+
+Full evidence: `corpus/LEDGER.md`, section M4.
+
 ## Known inherited exceptions (not divergences, tracked)
 
 - `serde_stacker` (dev-dependency) pulls `psm`, which compiles C. Dev-only, never

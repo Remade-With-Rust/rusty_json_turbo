@@ -213,6 +213,16 @@ jobs:
       # oracle on one byte value at one offset is a corruption bug, and the
       # byte-identical contract has to hold at EVERY rung -- including the two
       # this machine may not even select by default.
+      # M4's refutations have to keep being true as the code moves. The B6
+      # probe's two arms must go on building identical values -- a probe whose
+      # arms drift apart stops being a comparison -- and B14's finding is that
+      # nothing reaches `deserialize_in_place`, which only a test can hold.
+      - name: The B6 ceiling probe still compares equal work
+        run: |
+          cargo run -p rusty_json_turbo-bench --release --locked --             b6 --pairs 3 --window-ms 40 | tee b6.txt
+          grep -q 'work parity: 2600 frames' b6.txt             || { echo '::error::the B6 probe arms no longer build identical values'; exit 1; }
+      - name: Nothing reaches deserialize_in_place (brick B14)
+        run: cargo test -p rusty_json_turbo-bench --release --locked --test b14_reachability
       - name: The SIMD island agrees with its oracle, at every rung
         shell: bash
         run: |
