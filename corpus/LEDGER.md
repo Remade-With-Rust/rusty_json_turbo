@@ -3019,3 +3019,157 @@ than a `continue-on-error` one so that a failure is visible.
 Still open after that: nothing on the platform list, and the census's own
 `accel`-linked reachability claim, which is weaker than the in-crate one
 because `ESC_STEPS` lives on the wrong side of a crate boundary (above).
+
+### 2026-09-10 -- M7 opens: the swap mechanism, and a hole in the oracle it exposed
+
+The consumer swap looked like a chore -- edit a couple of hundred manifests --
+and turned
+out to need one piece of infrastructure, and to expose one hole in this
+project's own measurement chain that had been open since M0.
+
+#### The portfolio, counted -- and the first count was WRONG
+
+Every repository was scanned for a `serde_json` dependency declaration. The
+first pass looked only at `F:\coding` and produced a confident, wrong answer.
+**Five repositories are checked out TWICE**, on `F:` and under
+`C:/Users/talmo/coding`, and for three of them the live copy is the one on
+C: -- `mata-master`'s F: copy is missing its workspace root entirely and cannot
+build at all, while the C: copy has 107 declarations across two workspaces. One
+repository, `janus`, exists only on C: and was missed completely.
+
+**A swap applied to a stale duplicate is worse than no swap: it looks done and
+changes nothing.** So the survey now reports both copies with each one's last
+commit date and dirtiness, and names the live one.
+
+Corrected: **22 repositories declare `serde_json`.**
+
+| repo | live copy | decls | workspace roots |
+|---|---|---:|---:|
+| mata-master | **C:** | 107 | 2 (root + `Prometheus`) |
+| FFai | **C:** | 18 | 5 |
+| rusty_maplibre | F: | 14 | 2 |
+| faceless-man | F: | 13 | 4 |
+| remade_ffmpeg_rs | F: | 11 | 6 |
+| janus | **C: only** | 11 | 26 |
+| faucet | **C:** | 10 | 1 |
+| mid | F: | 9 | 1 |
+| deputy | **C:** | 7 | 1 |
+| terra | F: | 6 | 1 |
+| rusty_time, rusty_RAG, mata-oem-sidecar | F: | 5 each | 2 / 0 / 1 |
+| rag-converter, rusty_RTOS, thesoilapp | F: | 4 each | 1 / 20 / 2 |
+| Dial, rs_AV2ed | F: | 3 each | 1 / 16 |
+| mata-maestro, rusty_zstd | F: | 2 each | 1 / 2 |
+| rusty_dds | F: | 1 | 1 |
+
+**A nested workspace resolves independently**, so the number that matters for
+the swap is workspace ROOTS, not repositories. `janus` is a meta-repository of
+independently-cloned sub-repositories -- `espino`, `rusty_esp_iroh` and
+`rusty_esp_mid` are the three that touch JSON, and each is its own GitHub repo;
+`rusty_RTOS` holds twenty roots, `rs_AV2ed` sixteen.
+
+#### A rename converts the wrong half, and the two halves do not type-check
+
+The obvious swap is to rename the dependency:
+
+```toml
+serde_json = { package = "rusty_json_turbo", git = "..." }
+```
+
+The fork's package is `rusty_json_turbo` and its LIBRARY is `serde_json`, so
+every `use serde_json::...` line keeps working. It is also **the wrong tool**,
+and the reverse-dependency trees say why: of these twenty-two repositories, most
+reach `serde_json` through a THIRD-PARTY crate as well as directly --
+`axum`, `cozo`, `dioxus-desktop`, `candle-transformers`, `lambda_http`,
+`spacedb-crdt`. A rename converts the JSON a repository writes itself and
+leaves all of those on upstream.
+
+And the two are then **different types**. A `Value` handed from a patched
+axum handler to unpatched consumer code does not compile; worse, the fork
+never reaches the serialization a web service actually spends its time on.
+
+#### `[patch.crates-io]` converts everything, and needs a package that can be patched
+
+A patch replaces every copy in the graph at once. But **`[patch]` matches on
+PACKAGE name**, and cargo rejects a patch whose replacement has a different
+one. Ours is `rusty_json_turbo`; the crates.io name `serde_json` is upstream's
+and always will be.
+
+The way through: a **git** patch source has no registry to answer to. Cargo
+simply looks through the repository for a package with the requested name. So
+`crates/serde_json-shim/` is a package named `serde_json`, version `1.0.151`
+(the upstream release this fork tracks), whose entire body is:
+
+```rust
+pub use turbo::*;
+pub use turbo::json;
+```
+
+A re-export and **not** a second compilation of `src/`, deliberately: two
+builds of the same source produce two sets of types that do not unify, which
+is exactly the fault a whole-graph patch exists to prevent. So the shim is
+gated by code that only COMPILES if the types are identical -- a `Value`
+built through the shim is moved into a binding typed by the fork, and the same
+for `Map`, `Number` and `Error`. A behavioural test could not see the
+difference.
+
+The consumer side is then one table, and **zero per-member edits** -- which is
+what makes `mid`'s nine declarations and `mata-master`'s **hundred and seven**
+tractable:
+
+```toml
+[patch.crates-io]
+serde_json = { git = "https://github.com/Remade-With-Rust/rusty_json_turbo", branch = "master" }
+```
+
+#### THE HOLE THIS OPENED, AND IT WAS ALREADY THERE
+
+A package named `serde_json` inside this repository is dangerous, because the
+harness depends on upstream serde_json as its **oracle**, declared
+`{ package = "serde_json", version = "=1.0.151" }`. From the moment the shim
+exists, that request has two plausible answers -- and the wrong one would
+silently turn every differential result in this project into a comparison of
+us against ourselves. Every byte-identical claim, every ours-vs-upstream
+ratio, the instantiation-bias correction, the whole ledger.
+
+**Nothing was checking it.** `oracle_reports_a_difference` checks the
+comparison FUNCTION -- it would keep passing happily while both arms ran our
+own parser. That hole existed since M0; the shim only made it reachable.
+
+`tests/m7_oracle_identity.rs` closes it with a fact no naming trick can fake:
+**our work counters are statics inside our crate.** Parse a document through
+the oracle arm and every counter must still read zero, because upstream's code
+cannot touch them. Parse the same document through our arm and they must move
+-- or the first assertion is vacuous. Measured: the oracle arm leaves all
+counters at zero while our arm reports 169,287 whitespace runs on the same
+document, and the two produce identical output. The second test asserts the
+oracle is the PINNED version from the registry and not a local path, because a
+differential gate against the wrong upstream release is a gate against the
+wrong contract.
+
+This is the same law M3 was reversed for -- *an A/B is only worth what its
+baseline is worth* -- applied to the baseline everything else rests on.
+
+#### A SILENT FAILURE MODE IN THE SWAP ITSELF
+
+Three repositories took the patch and **did not use it**, and cargo said so in
+a *warning* rather than an error, so the build carried on against upstream:
+
+```text
+warning: patch `serde_json v1.0.151 (...)` was not used in the crate graph
+```
+
+The cause is the lockfile. `mata-maestro` had `serde_json 1.0.149` pinned,
+`thesoilapp` and `remade_ffmpeg_rs` had `1.0.150`, and a patch offering
+`1.0.151` does not match a pinned `1.0.149` -- so cargo keeps the pin. `cargo
+update serde_json` fixes it, and afterwards the shim reaches
+`aws_lambda_events`, `lambda_http` and `axum` as intended.
+
+**`rusty_time` worked immediately only because its lock already sat on
+1.0.151, which is luck, not correctness.** So:
+
+> **A manifest edit is not a swap. Every swap is verified with
+> `cargo tree -i serde_json` showing the shim's path, never assumed from the
+> edit** -- because the failure mode is a warning in the middle of a
+> successful build, which is precisely the silent-skip shape this project has
+> been bitten by three times (the `.ndjson` filter, the opt-in island, the
+> feature-gated wasm tests).

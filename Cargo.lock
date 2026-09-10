@@ -476,7 +476,7 @@ dependencies = [
  "rusty_json_turbo",
  "rusty_json_turbo-alloc",
  "serde",
- "serde_json",
+ "serde_json 1.0.151 (registry+https://github.com/rust-lang/crates.io-index)",
  "simd-json",
  "sonic-rs",
 ]
@@ -543,6 +543,14 @@ dependencies = [
 [[package]]
 name = "serde_json"
 version = "1.0.151"
+dependencies = [
+ "rusty_json_turbo",
+ "serde",
+]
+
+[[package]]
+name = "serde_json"
+version = "1.0.151"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c841b55ecdae098c80dcae9cf767f6f8a0c2cdb3416bbef72181df4d0fe73f14"
 dependencies = [
@@ -589,7 +597,7 @@ dependencies = [
  "halfbrown",
  "ref-cast",
  "serde",
- "serde_json",
+ "serde_json 1.0.151 (registry+https://github.com/rust-lang/crates.io-index)",
  "simdutf8",
  "value-trait",
 ]
@@ -779,7 +787,7 @@ dependencies = [
  "glob",
  "serde",
  "serde_derive",
- "serde_json",
+ "serde_json 1.0.151 (registry+https://github.com/rust-lang/crates.io-index)",
  "target-tuple",
  "termcolor",
  "toml",

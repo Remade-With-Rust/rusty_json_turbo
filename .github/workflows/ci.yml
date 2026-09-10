@@ -60,6 +60,28 @@ jobs:
           for f in preserve_order float_roundtrip arbitrary_precision float_roundtrip,arbitrary_precision raw_value unbounded_depth; do
             cargo test -p rusty_json_turbo --locked --features "$f" --tests -- --skip ui --exact
           done
+      # THE ORACLE IS REALLY UPSTREAM. This runs FIRST among the differential
+      # gates because every one of them -- and every ours-vs-upstream number in
+      # the ledger -- is worthless if `serde_json_upstream` is secretly our own
+      # code. `oracle_reports_a_difference` checks the comparison FUNCTION,
+      # which would keep passing while both arms ran our parser.
+      #
+      # It became a live risk with the M7 consumer swap: converting a whole
+      # dependency graph needs a package literally named `serde_json` in this
+      # repository (`crates/serde_json-shim`), and from that moment a manifest
+      # asking for `{ package = "serde_json", version = "=1.0.151" }` has two
+      # plausible answers. The proof is one no naming trick can fake: our work
+      # counters are statics inside our crate, so parsing through the oracle
+      # must leave every one of them at zero.
+      - name: The oracle arm is really upstream, not us under a rename
+        run: cargo test -p rusty_json_turbo-bench --locked --features count-work --test m7_oracle_identity -- --nocapture
+      # The patch shim must stay TYPE-IDENTICAL to the fork, not a second
+      # compilation of it. Two builds of the same source produce two sets of
+      # types that do not unify, which is exactly the fault a whole-graph patch
+      # exists to prevent -- and it is invisible to any behavioural test, so the
+      # check is code that only compiles if the types are the same.
+      - name: The patch shim is the fork, not a lookalike
+        run: cargo test -p serde_json --locked
       - name: Differential oracle (byte-identical to upstream serde_json)
         run: cargo test -p rusty_json_turbo-bench --locked -- --nocapture
       # The soak is the same question as fuzz/oracle_diff, asked on every runner

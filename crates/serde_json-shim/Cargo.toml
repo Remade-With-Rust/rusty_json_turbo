@@ -1,0 +1,88 @@
+# THE PATCH SHIM. A package named `serde_json`, so `[patch.crates-io]` works.
+#
+# WHY THIS EXISTS. A consumer can always rename its own dependency:
+#
+#     serde_json = { package = "rusty_json_turbo", git = "..." }
+#
+# and that converts the JSON calls the consumer writes itself. It does NOT
+# convert axum's, cozo's, dioxus's or candle-transformers' copies, and measured
+# across this portfolio those are the majority: of the twenty repositories that
+# depend on serde_json, most reach it through a third-party crate as well as
+# directly. Worse, the two copies are DIFFERENT TYPES -- a `Value` handed from
+# axum to consumer code would not compile.
+#
+# `[patch.crates-io]` converts the whole graph at once, and it matches on
+# PACKAGE name. Ours is `rusty_json_turbo`, so it cannot be the target of a
+# patch for `serde_json` -- cargo rejects a patch whose package name differs.
+# The crates.io name `serde_json` is upstream's and always will be. But a
+# **git** patch source has no registry to answer to: cargo simply looks through
+# the repository for a package with the requested name. So this is it.
+#
+#     [patch.crates-io]
+#     serde_json = { git = "https://github.com/Remade-With-Rust/rusty_json_turbo" }
+#
+# One line, every copy in the graph, no renaming, and no chance of two
+# incompatible `Value` types, because there is now only one.
+#
+# WHY IT IS THREE LINES OF CODE. It re-exports the real crate rather than
+# recompiling its source. Compiling `src/` twice would produce two distinct
+# sets of types that do not unify -- exactly the fault this shim exists to
+# prevent.
+#
+# THE HAZARD IT INTRODUCES, AND THE GATE. This repository's harness depends on
+# upstream serde_json as its ORACLE, declared `{ package = "serde_json",
+# version = "=1.0.151" }`. With a local package of that name in the workspace
+# there are suddenly two plausible answers to that request, and the wrong one
+# would silently turn every differential result in the project into a
+# comparison of us against ourselves -- the same shape as the M3 island's
+# invalid A/B. `crates/rusty_json_turbo-bench/tests/m7_oracle_identity.rs`
+# proves it did not happen, using a fact no naming trick can fake: our work
+# counters are statics inside our crate, so parsing through the oracle must
+# leave every one of them at zero.
+[package]
+name = "serde_json"
+# The version upstream release this fork tracks, so a consumer's `serde_json =
+# "1"` or `"1.0.151"` requirement is satisfied by the patch. It is NOT
+# `version.workspace` on purpose: this number belongs to upstream's release
+# series, not to this fork's own 0.x version.
+version = "1.0.151"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+homepage.workspace = true
+rust-version.workspace = true
+description = "Patch shim: a package named serde_json that re-exports rusty_json_turbo, so a consumer can convert its whole dependency graph with one [patch.crates-io] line. Never published."
+publish = false
+
+[dependencies]
+# Renamed, because this crate's own library is also called `serde_json` and the
+# two names would collide.
+turbo = { package = "rusty_json_turbo", path = "../..", default-features = false }
+
+[dev-dependencies]
+# The fork under its own name, so a test can prove the two are the SAME types
+# rather than two copies that merely behave alike.
+turbo = { package = "rusty_json_turbo", path = "../.." }
+serde = { workspace = true }
+
+[features]
+# Upstream's feature set, forwarded one for one. A consumer that enables a
+# feature on `serde_json` must get it, or the patch changes behaviour -- which
+# is the one thing a drop-in may never do.
+default = ["std"]
+std = ["turbo/std"]
+alloc = ["turbo/alloc"]
+preserve_order = ["turbo/preserve_order"]
+float_roundtrip = ["turbo/float_roundtrip"]
+arbitrary_precision = ["turbo/arbitrary_precision"]
+raw_value = ["turbo/raw_value"]
+unbounded_depth = ["turbo/unbounded_depth"]
+# And this fork's own, so a consumer can reach them through the patch too.
+accel = ["turbo/accel"]
+profile = ["turbo/profile"]
+knobs = ["turbo/knobs"]
+
+[lints.rust]
+unsafe_code = "forbid"
+missing_docs = "warn"
