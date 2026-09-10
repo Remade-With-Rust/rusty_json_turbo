@@ -615,7 +615,12 @@ impl<'a> SliceRead<'a> {
 // `skip_whitespace` find no whitespace at all.)
 // ---------------------------------------------------------------------------
 
+// The SWAR primitives below serve the non-`accel` build only; with the island
+// on, the same exact predicates live in `rusty_json_turbo-accel`, tested there
+// against the same oracle.
+#[cfg(not(feature = "accel"))]
 const WS_ONES: u64 = 0x0101_0101_0101_0101;
+#[cfg(not(feature = "accel"))]
 const WS_HIGHS: u64 = 0x8080_8080_8080_8080;
 
 #[inline(always)]
@@ -629,6 +634,7 @@ fn is_ws(b: u8) -> bool {
 /// subtraction borrows across byte boundaries and reports a byte as zero
 /// because its neighbour was. Here the addition is `low7 + 0x7F <= 0xFE`, which
 /// cannot carry out of its own byte, so no byte can be contaminated.
+#[cfg(not(feature = "accel"))]
 #[inline(always)]
 fn zero_bytes(x: u64) -> u64 {
     // `low7 + 0x7F` sets bit 7 iff low7 != 0; OR the original bit 7 back in, so
@@ -637,12 +643,14 @@ fn zero_bytes(x: u64) -> u64 {
 }
 
 /// High bit set in each byte of `x` equal to `c`.
+#[cfg(not(feature = "accel"))]
 #[inline(always)]
 fn eq_bytes(x: u64, c: u8) -> u64 {
     zero_bytes(x ^ (c as u64).wrapping_mul(WS_ONES))
 }
 
 /// High bit set in each byte of `x` that is NOT insignificant whitespace.
+#[cfg(not(feature = "accel"))]
 #[inline(always)]
 fn non_ws_bytes(x: u64) -> u64 {
     let ws = eq_bytes(x, b' ') | eq_bytes(x, b'\n') | eq_bytes(x, b'\t') | eq_bytes(x, b'\r');
@@ -664,6 +672,13 @@ fn non_ws_bytes(x: u64) -> u64 {
 /// Stays in the tree forever. It is what the wide scan is gated against, and
 /// what runs when the knob turns the wide path off.
 #[inline]
+// THE ORACLE STAYS, even when nothing calls it in a default build. With the
+// island linked, the wide path lives in `rusty_json_turbo-accel` and reaches
+// its OWN scalar twin through `RJT_ISA=scalar`, which leaves this one reachable
+// only from the `knobs` A/B and the tests below. It is kept regardless: a fast
+// path whose scalar twin has been deleted cannot be checked and cannot be
+// debugged, and this crate's tests compare against exactly this function.
+#[allow(dead_code)]
 fn scan_ws_scalar(slice: &[u8], from: usize) -> (usize, Option<u8>) {
     let mut i = from;
     while i < slice.len() {
@@ -702,6 +717,10 @@ fn scan_ws_run(slice: &[u8], from: usize) -> (usize, Option<u8>) {
 
     let mut i = from;
     // Peel a short run without touching the wide path (see `WS_PEEL`).
+    //
+    // This still matters, and matters MORE the wider the step gets:
+    // `twitter`'s whitespace run is a single byte 13,346 times, and an 8-byte
+    // step over those cost 10% before this peel existed.
     let peel = (from + WS_PEEL).min(slice.len());
     while i < peel {
         let b = slice[i];
@@ -710,11 +729,33 @@ fn scan_ws_run(slice: &[u8], from: usize) -> (usize, Option<u8>) {
         }
         i += 1;
     }
+    scan_ws_wide(slice, i)
+}
 
-    // Written so there is no panicking branch at all: no indexing, no unwrap,
-    // no unreachable. Both fallible steps are provably infallible here and fold
-    // away, and if either ever were not, the scalar tail below finishes the job
-    // correctly rather than aborting.
+/// The wide scan, handed to the SIMD island (M3).
+///
+/// `rusty_json_turbo-accel` runs the same predicate 16 or 32 bytes at a time
+/// on x86-64, with the scalar walk as its permanent oracle and `RJT_ISA` to
+/// choose a rung at runtime. It is a separate crate so that no `unsafe` for a
+/// vector load is ever written in the parser.
+#[cfg(feature = "accel")]
+#[inline]
+fn scan_ws_wide(slice: &[u8], from: usize) -> (usize, Option<u8>) {
+    let at = rusty_json_turbo_accel::first_non_ws(slice, from);
+    // Return the byte with the index. Returning only the index cost a measured
+    // 4% on `canada.json`, because the caller loaded it again.
+    (at, slice.get(at).copied())
+}
+
+/// The wide scan without the island: 8 bytes per step, SWAR.
+///
+/// Written so there is no panicking branch at all: no indexing, no unwrap, no
+/// unreachable. Both fallible steps are provably infallible here and fold
+/// away, and if either ever were not, the scalar tail finishes the job
+/// correctly rather than aborting.
+#[cfg(not(feature = "accel"))]
+fn scan_ws_wide(slice: &[u8], from: usize) -> (usize, Option<u8>) {
+    let mut i = from;
     while let Some(window) = slice.get(i..i + 8) {
         let Ok(bytes) = <[u8; 8]>::try_from(window) else {
             break;

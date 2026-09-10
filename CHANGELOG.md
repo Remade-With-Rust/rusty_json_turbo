@@ -46,6 +46,31 @@ carry their measured numbers and method line, never an adjective.
   and **deterministic work counters** (`rjson-bench work`, library feature
   `profile`) with an `RJT_*` A/B knob (feature `knobs`) so two implementations
   can be compared inside one binary rather than across two code layouts.
+- **M3: the SIMD island.** A new crate, `rusty_json_turbo-accel`, carrying SSE2
+  and AVX2 twins of the whitespace and escape scanners. It is the one crate in
+  the workspace where `unsafe` is allowed, so the parser itself never writes it
+  for a vector load; it has no dependencies and no build script. Each kernel is
+  written against a scalar oracle that stays in the tree permanently and is
+  reachable in production through `RJT_ISA=scalar`.
+  - **SSE2 ships, AVX2 does not, and that is measured.** AVX2 beat the 8-byte
+    baseline on `citm_catalog` and lost on `twitter` (0.958x best-of-N) and
+    `canada`; SSE2 beat it on **every** cell. The longest whitespace run
+    anywhere in the corpus is **29 bytes**, so a 32-byte step is never fully
+    used while its costs are paid on every run. AVX2 stays reachable via
+    `RJT_ISA=avx2` so it can be re-measured elsewhere.
+  - Against the previous 8-byte path, 61 pairs with controls flat:
+    `citm_catalog` scan **1.105x** (61/61), `s4-media-probe` scan **1.094x**,
+    `citm_catalog` struct parse **1.075x**, and on the serialize side `twitter`
+    struct stringify **1.062x**, DOM stringify **1.060x**, `citm_catalog`
+    struct stringify **1.053x**. Nothing anywhere below 0.987x.
+  - Gated by twin tests against the oracle over all 256 byte values at every
+    offset across the 8, 16 and 32-byte boundaries (>500,000 assertions per
+    scanner), a poison test proving the suite catches a signed `b < 0x20` and a
+    range whitespace test, and the byte-identical oracle plus soak at **all
+    four** `RJT_ISA` rungs.
+  - Every method line now prints `isa=<rung> (machine offers <ceiling>)`, since
+    a run narrowed by an override and a run on a lesser machine otherwise
+    produce the same number for different reasons.
 - **Brick B15 built, measured and reverted**, and its reason retires B5 too.
   Folding a short string's quotes and contents into one sink call removed
   **36.6%** of `twitter`'s sink calls and was **11-15% slower** (61 pairs,

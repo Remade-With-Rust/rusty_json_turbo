@@ -1,0 +1,31 @@
+﻿pinvs: swar8=F:\coding\rusty_json_turbo\target\b-knobs\release\rjson-bench.exe (C1F4DD8C960281E1)
+pinvs: sse2=F:\coding\rusty_json_turbo\target\b-knobs\release\rjson-bench.exe (C1F4DD8C960281E1)
+pinvs: NULL ARM -- identical binaries, this is the floor
+pinvs: cpu=2 priority=High pairs=61 bench='solo --cell citm_catalog,scan --cell citm_catalog,struct-parse --cell citm_catalog,dom-parse --cell s4-media-probe,scan --cell s4-media-probe,dom-parse --cell twitter,scan --cell canada,scan --cell canada,dom-stringify --arm ours'
+
+| file | column | swar8 | sse2 | swar8/sse2 time (median [min, max]) | wins, z |
+|---|---|---:|---:|---:|---:|
+| canada | dom-stringify | swar8 **1,032 MB/s** | sse2 1,037 MB/s | **1.006x** [0.937, 1.065] | 24/61, z = -1.66 |
+| canada | scan | swar8 **1,019 MB/s** | sse2 1,026 MB/s | **1.002x** [0.958, 1.064] | 28/61, z = -0.64 |
+| citm_catalog | dom-parse | swar8 **480 MB/s** | sse2 487 MB/s | **1.016x** [0.897, 1.155] | 17/61, z = -3.46 |
+| citm_catalog | scan | swar8 **2,075 MB/s** | sse2 2,297 MB/s | **1.105x** [1.026, 1.214] | 0/61, z = -7.81 |
+| citm_catalog | struct-parse | swar8 **1,321 MB/s** | sse2 1,419 MB/s | **1.075x** [1.000, 1.121] | 0/61, z = -7.81 |
+| s4-media-probe | dom-parse | swar8 **386 MB/s** | sse2 408 MB/s | **1.051x** [0.934, 1.247] | 11/61, z = -4.99 |
+| s4-media-probe | scan | swar8 **1,704 MB/s** | sse2 1,873 MB/s | **1.094x** [0.996, 1.169] | 1/61, z = -7.55 |
+| twitter | scan | swar8 **1,529 MB/s** | sse2 1,559 MB/s | **1.023x** [0.935, 1.088] | 7/61, z = -6.02 |
+
+| file | column | swar8 best-of-N | sse2 best-of-N | swar8/sse2 best-of-N |
+|---|---|---:|---:|---:|
+| canada | dom-stringify | 1,109 MB/s | 1,095 MB/s | **0.987x** |
+| canada | scan | 1,080 MB/s | 1,092 MB/s | **1.011x** |
+| citm_catalog | dom-parse | 518 MB/s | 536 MB/s | **1.034x** |
+| citm_catalog | scan | 2,242 MB/s | 2,499 MB/s | **1.115x** |
+| citm_catalog | struct-parse | 1,449 MB/s | 1,479 MB/s | **1.020x** |
+| s4-media-probe | dom-parse | 430 MB/s | 475 MB/s | **1.106x** |
+| s4-media-probe | scan | 1,880 MB/s | 1,992 MB/s | **1.060x** |
+| twitter | scan | 1,649 MB/s | 1,651 MB/s | **1.001x** |
+pinvs: wrote corpus\runs\2026-09-10-m3-shipped-sse2.csv
+
+method: PROCESS-level paired A/B between two binaries (a global allocator is one per program, so it cannot be an in-process arm); each binary reports its own per-cell time via json-bench solo so process launch is outside the number; leading binary alternated per pair (ABBA); pairs=61; statistic=min per-iteration time in each arm-sample window; verdict=median of paired ratios + paired wins with z, plus a best-of-N per-arm minimum that noise can only inflate; pinned=cpu2/High, affinity read back per run; work parity: output/input bytes asserted equal per cell per pair; machine=Intel64 Family 6 Model 183 Stepping 1, GenuineIntel
+A: BINARY|system|false|uncommitted|windows|x86_64
+B: BINARY|system|false|uncommitted|windows|x86_64

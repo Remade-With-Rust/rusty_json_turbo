@@ -621,9 +621,11 @@ fn work(args: &[String]) -> ExitCode {
         return ExitCode::from(2);
     }
     println!(
-        "work counters | ws fast path: {} | allocator {}",
+        "work counters | ws fast path: {} | allocator {} | isa {} (machine offers {})",
         std::env::var("RJT_WS_FASTPATH").unwrap_or_else(|_| "1 (default)".into()),
-        alloc_arm::name()
+        alloc_arm::name(),
+        turbo::counters::isa(),
+        turbo::counters::isa_available()
     );
     println!();
     println!("PARSE work -- per document, deterministic");

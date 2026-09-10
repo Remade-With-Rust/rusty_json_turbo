@@ -448,6 +448,7 @@ dependencies = [
  "memchr",
  "ref-cast",
  "rustversion",
+ "rusty_json_turbo-accel",
  "serde",
  "serde_bytes",
  "serde_core",
@@ -456,6 +457,10 @@ dependencies = [
  "trybuild",
  "zmij",
 ]
+
+[[package]]
+name = "rusty_json_turbo-accel"
+version = "0.1.0"
 
 [[package]]
 name = "rusty_json_turbo-alloc"

@@ -2100,6 +2100,13 @@ where
 /// production so the two can be A/B'd inside one binary rather than across two
 /// builds, where code layout alone has measured plus or minus 13% here.
 #[inline]
+// THE ORACLE STAYS, even when nothing calls it in a default build. With the
+// island linked, the wide path lives in `rusty_json_turbo-accel` and reaches
+// its OWN scalar twin through `RJT_ISA=scalar`, which leaves this one reachable
+// only from the `knobs` A/B and the tests below. It is kept regardless: a fast
+// path whose scalar twin has been deleted cannot be checked and cannot be
+// debugged, and this crate's tests compare against exactly this function.
+#[allow(dead_code)]
 fn scan_to_escape_scalar(bytes: &[u8], from: usize) -> usize {
     let mut i = from;
     while i < bytes.len() {
@@ -2120,6 +2127,7 @@ fn scan_to_escape_scalar(bytes: &[u8], from: usize) -> usize {
 /// three fall out of the exact zero-byte test, with no comparison and no
 /// approximation. `escape_mask_agrees_with_table` asserts the equivalence over
 /// all 256 byte values, so this is checked rather than argued.
+#[cfg(not(feature = "accel"))]
 #[inline(always)]
 fn escape_bytes(x: u64) -> u64 {
     crate::swar::masked_zero_bytes(x, 0xE0)
@@ -2149,19 +2157,37 @@ fn scan_to_escape(bytes: &[u8], from: usize) -> usize {
     if !esc_wide() {
         return scan_to_escape_scalar(bytes, from);
     }
-    let mut i = from;
-    while let Some(window) = bytes.get(i..i + 8) {
-        let Ok(eight) = <[u8; 8]>::try_from(window) else {
-            break;
-        };
+    // THE ISLAND (M3). Same predicate, 16 or 32 bytes at a time on x86-64,
+    // with the scalar walk above as its permanent oracle and `RJT_ISA` to
+    // choose a rung at runtime. A separate crate, so no `unsafe` for a vector
+    // load is written here.
+    //
+    // Unlike the whitespace scan there is no peel, and the reason is the
+    // measured shape: this runs the length of a whole string, so the entry
+    // cost amortises over every byte, where a whitespace run is a single byte
+    // 46% of the time on `twitter`.
+    #[cfg(feature = "accel")]
+    {
         crate::counters::add(&crate::counters::ESC_STEPS, 1);
-        let mask = escape_bytes(u64::from_le_bytes(eight));
-        if mask != 0 {
-            return i + (mask.trailing_zeros() >> 3) as usize;
-        }
-        i += 8;
+        rusty_json_turbo_accel::first_escape(bytes, from)
     }
-    scan_to_escape_scalar(bytes, i)
+
+    #[cfg(not(feature = "accel"))]
+    {
+        let mut i = from;
+        while let Some(window) = bytes.get(i..i + 8) {
+            let Ok(eight) = <[u8; 8]>::try_from(window) else {
+                break;
+            };
+            crate::counters::add(&crate::counters::ESC_STEPS, 1);
+            let mask = escape_bytes(u64::from_le_bytes(eight));
+            if mask != 0 {
+                return i + (mask.trailing_zeros() >> 3) as usize;
+            }
+            i += 8;
+        }
+        scan_to_escape_scalar(bytes, i)
+    }
 }
 
 fn format_escaped_str_contents<W, F>(
@@ -2388,7 +2414,22 @@ where
 
 #[cfg(test)]
 mod escape_tests {
-    use super::{escape_bytes, scan_to_escape, scan_to_escape_scalar, ESCAPE};
+    use super::{scan_to_escape, scan_to_escape_scalar, ESCAPE};
+
+    /// The predicate under test: this crate's own SWAR mask, or -- when the
+    /// island is linked -- the island's. Either way it is checked against
+    /// `ESCAPE`, the table the serializer actually indexes, so the two can
+    /// never drift apart silently.
+    fn flags_escape(b: u8) -> bool {
+        #[cfg(feature = "accel")]
+        {
+            rusty_json_turbo_accel::needs_escape(b)
+        }
+        #[cfg(not(feature = "accel"))]
+        {
+            super::escape_bytes(u64::from_le_bytes([b; 8])) != 0
+        }
+    }
     use alloc::vec;
     use alloc::vec::Vec;
 
@@ -2402,27 +2443,13 @@ mod escape_tests {
     #[test]
     fn escape_mask_agrees_with_table() {
         for b in 0..=255u8 {
-            for lane in 0..8 {
-                let word = (b as u64) << (lane * 8);
-                // Fill the other lanes with a byte that needs no escape, so
-                // only this lane can set a bit.
-                let filler = 0x41u64; // 'A'
-                let mut w = 0u64;
-                for l in 0..8 {
-                    if l != lane {
-                        w |= filler << (l * 8);
-                    }
-                }
-                let w = w | word;
-                let mask = escape_bytes(w);
-                let flagged = mask & (0x80 << (lane * 8)) != 0;
-                assert_eq!(
-                    flagged,
-                    ESCAPE[b as usize] != 0,
-                    "byte {b:#04x} in lane {lane}: mask said {flagged}, table says {}",
-                    ESCAPE[b as usize] != 0
-                );
-            }
+            assert_eq!(
+                flags_escape(b),
+                ESCAPE[b as usize] != 0,
+                "byte {b:#04x}: predicate said {}, table says {}",
+                flags_escape(b),
+                ESCAPE[b as usize] != 0
+            );
         }
     }
 
@@ -2494,8 +2521,7 @@ mod escape_tests {
     fn non_ascii_is_never_flagged() {
         for b in 0x80..=0xFFu8 {
             assert_eq!(ESCAPE[b as usize], 0, "table flags non-ASCII {b:#04x}");
-            let word = u64::from_le_bytes([b; 8]);
-            assert_eq!(escape_bytes(word), 0, "mask flags non-ASCII {b:#04x}");
+            assert!(!flags_escape(b), "predicate flags non-ASCII {b:#04x}");
         }
     }
 
@@ -2505,17 +2531,14 @@ mod escape_tests {
     /// -- a range test that catches 0x20 (a space) as well as the controls.
     #[test]
     fn the_gate_would_catch_an_off_by_one_range() {
-        fn poisoned(x: u64) -> u64 {
-            // 0xC0 instead of 0xE0: this flags everything below 0x40, so
-            // spaces, digits and punctuation all get escaped.
-            crate::swar::masked_zero_bytes(x, 0xC0)
-                | crate::swar::eq_bytes(x, b'"')
-                | crate::swar::eq_bytes(x, 0x5C)
+        // 0xC0 instead of 0xE0 flags everything below 0x40, so spaces, digits
+        // and punctuation would all be escaped.
+        fn poisoned(b: u8) -> bool {
+            b & 0xC0 == 0 || b == b'"' || b == 0x5C
         }
         let mut disagreements = 0;
         for b in 0..=255u8 {
-            let word = u64::from_le_bytes([b; 8]);
-            if (poisoned(word) != 0) != (ESCAPE[b as usize] != 0) {
+            if poisoned(b) != (ESCAPE[b as usize] != 0) {
                 disagreements += 1;
             }
         }

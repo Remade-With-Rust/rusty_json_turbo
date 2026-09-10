@@ -1,0 +1,8 @@
+﻿pinvs: swar8=F:\coding\rusty_json_turbo\target\b-knobs\release\rjson-bench.exe (DE54123EB6FF9459)
+pinvs: sse2=F:\coding\rusty_json_turbo\target\b-knobs\release\rjson-bench.exe (DE54123EB6FF9459)
+pinvs: NULL ARM -- identical binaries, this is the floor
+pinvs: cpu=2 priority=High pairs=61 bench='solo --cell citm_catalog,struct-stringify --cell citm_catalog,dom-stringify --cell twitter,struct-stringify --cell twitter,dom-stringify --cell s4-ocr-i18n,dom-stringify --cell twitter,dom-parse --arm ours'
+
+| file | column | swar8 | sse2 | swar8/sse2 time (median [min, max]) | wins, z |
+|---|---|---:|---:|---:|---:|
+| citm_catalog | dom-stringify | swar8 **1,199 MB/s** | sse2 1,236 MB/s | **1.032x** [0.983, 1.101] | 3/61, z = -7.04 |

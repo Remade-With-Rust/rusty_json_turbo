@@ -1,0 +1,24 @@
+﻿pinvs: swar8=F:\coding\rusty_json_turbo\target\b-knobs\release\rjson-bench.exe (C1F4DD8C960281E1)
+pinvs: sse2=F:\coding\rusty_json_turbo\target\b-knobs\release\rjson-bench.exe (C1F4DD8C960281E1)
+pinvs: NULL ARM -- identical binaries, this is the floor
+pinvs: cpu=2 priority=High pairs=51 bench='solo --cell twitter,dom-stringify --cell twitter,struct-stringify --cell citm_catalog,struct-stringify --cell s4-ocr-i18n,dom-stringify --cell twitter,dom-parse --arm ours'
+
+| file | column | swar8 | sse2 | swar8/sse2 time (median [min, max]) | wins, z |
+|---|---|---:|---:|---:|---:|
+| citm_catalog | struct-stringify | swar8 **1,962 MB/s** | sse2 1,955 MB/s | **0.993x** [0.928, 1.027] | 34/51, z = +2.38 |
+| s4-ocr-i18n | dom-stringify | swar8 **757 MB/s** | sse2 777 MB/s | **1.027x** [0.973, 1.102] | 8/51, z = -4.90 |
+| twitter | dom-parse | swar8 **371 MB/s** | sse2 374 MB/s | **1.007x** [0.949, 1.061] | 20/51, z = -1.54 |
+| twitter | dom-stringify | swar8 **2,082 MB/s** | sse2 2,234 MB/s | **1.076x** [0.991, 1.175] | 1/51, z = -6.86 |
+| twitter | struct-stringify | swar8 **2,108 MB/s** | sse2 2,279 MB/s | **1.080x** [1.014, 1.171] | 0/51, z = -7.14 |
+
+| file | column | swar8 best-of-N | sse2 best-of-N | swar8/sse2 best-of-N |
+|---|---|---:|---:|---:|
+| citm_catalog | struct-stringify | 2,072 MB/s | 2,009 MB/s | **0.970x** |
+| s4-ocr-i18n | dom-stringify | 797 MB/s | 817 MB/s | **1.026x** |
+| twitter | dom-parse | 388 MB/s | 389 MB/s | **1.001x** |
+| twitter | dom-stringify | 2,118 MB/s | 2,269 MB/s | **1.071x** |
+| twitter | struct-stringify | 2,259 MB/s | 2,450 MB/s | **1.085x** |
+
+method: PROCESS-level paired A/B between two binaries (a global allocator is one per program, so it cannot be an in-process arm); each binary reports its own per-cell time via json-bench solo so process launch is outside the number; leading binary alternated per pair (ABBA); pairs=51; statistic=min per-iteration time in each arm-sample window; verdict=median of paired ratios + paired wins with z, plus a best-of-N per-arm minimum that noise can only inflate; pinned=cpu2/High, affinity read back per run; work parity: output/input bytes asserted equal per cell per pair; machine=Intel64 Family 6 Model 183 Stepping 1, GenuineIntel
+A: BINARY|system|false|uncommitted|windows|x86_64
+B: BINARY|system|false|uncommitted|windows|x86_64

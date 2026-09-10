@@ -1,0 +1,29 @@
+﻿pinvs: swar8=F:\coding\rusty_json_turbo\target\b-knobs\release\rjson-bench.exe (0C1C74C03354D79E)
+pinvs: avx2=F:\coding\rusty_json_turbo\target\b-knobs\release\rjson-bench.exe (0C1C74C03354D79E)
+pinvs: NULL ARM -- identical binaries, this is the floor
+pinvs: cpu=2 priority=High pairs=61 bench='solo --cell citm_catalog,scan --cell citm_catalog,struct-parse --cell citm_catalog,dom-parse --cell twitter,scan --cell twitter,struct-parse --cell canada,scan --cell canada,dom-stringify --arm ours'
+
+| file | column | swar8 | avx2 | swar8/avx2 time (median [min, max]) | wins, z |
+|---|---|---:|---:|---:|---:|
+| canada | dom-stringify | swar8 **1,022 MB/s** | avx2 1,021 MB/s | **0.993x** [0.946, 1.040] | 34/61, z = +0.90 |
+| canada | scan | swar8 **1,220 MB/s** | avx2 1,218 MB/s | **0.999x** [0.966, 1.031] | 35/61, z = +1.15 |
+| citm_catalog | dom-parse | swar8 **487 MB/s** | avx2 491 MB/s | **1.012x** [0.934, 1.076] | 19/61, z = -2.94 |
+| citm_catalog | scan | swar8 **2,175 MB/s** | avx2 2,258 MB/s | **1.046x** [0.962, 1.123] | 7/61, z = -6.02 |
+| citm_catalog | struct-parse | swar8 **1,388 MB/s** | avx2 1,413 MB/s | **1.016x** [0.988, 1.060] | 7/61, z = -6.02 |
+| twitter | scan | swar8 **1,567 MB/s** | avx2 1,534 MB/s | **0.978x** [0.916, 1.044] | 46/61, z = +3.97 |
+| twitter | struct-parse | swar8 **810 MB/s** | avx2 809 MB/s | **0.998x** [0.858, 1.031] | 32/61, z = +0.38 |
+
+| file | column | swar8 best-of-N | avx2 best-of-N | swar8/avx2 best-of-N |
+|---|---|---:|---:|---:|
+| canada | dom-stringify | 1,060 MB/s | 1,071 MB/s | **1.010x** |
+| canada | scan | 1,280 MB/s | 1,251 MB/s | **0.978x** |
+| citm_catalog | dom-parse | 517 MB/s | 523 MB/s | **1.010x** |
+| citm_catalog | scan | 2,330 MB/s | 2,463 MB/s | **1.057x** |
+| citm_catalog | struct-parse | 1,437 MB/s | 1,469 MB/s | **1.023x** |
+| twitter | scan | 1,681 MB/s | 1,630 MB/s | **0.970x** |
+| twitter | struct-parse | 847 MB/s | 852 MB/s | **1.006x** |
+pinvs: wrote corpus\runs\2026-09-10-m3-isa-rung.csv
+
+method: PROCESS-level paired A/B between two binaries (a global allocator is one per program, so it cannot be an in-process arm); each binary reports its own per-cell time via json-bench solo so process launch is outside the number; leading binary alternated per pair (ABBA); pairs=61; statistic=min per-iteration time in each arm-sample window; verdict=median of paired ratios + paired wins with z, plus a best-of-N per-arm minimum that noise can only inflate; pinned=cpu2/High, affinity read back per run; work parity: output/input bytes asserted equal per cell per pair; machine=Intel64 Family 6 Model 183 Stepping 1, GenuineIntel
+A: BINARY|system|false|uncommitted|windows|x86_64
+B: BINARY|system|false|uncommitted|windows|x86_64

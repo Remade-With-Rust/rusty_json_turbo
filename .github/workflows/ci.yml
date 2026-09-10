@@ -209,6 +209,25 @@ jobs:
           on=$(steps 1); off=$(steps 0)
           echo "escape scanner steps: wide=$on scalar=$off"
           test "$on" -lt $((off / 2))             || { echo "::error::the wide escape scan is not removing steps (wide=$on scalar=$off)"; exit 1; }
+      # THE ISLAND'S GATE. A vector kernel that disagrees with its scalar
+      # oracle on one byte value at one offset is a corruption bug, and the
+      # byte-identical contract has to hold at EVERY rung -- including the two
+      # this machine may not even select by default.
+      - name: The SIMD island agrees with its oracle, at every rung
+        shell: bash
+        run: |
+          for isa in scalar swar sse2 avx2; do
+            echo "--- RJT_ISA=$isa"
+            RJT_ISA=$isa cargo test -p rusty_json_turbo-accel --release --locked
+            RJT_ISA=$isa cargo test -p rusty_json_turbo-bench --release --locked               --test oracle --test soak
+          done
+      # The island must also build where there is no x86 at all, falling back
+      # to SWAR rather than failing to compile.
+      - name: The island builds without x86 and without std
+        run: |
+          rustup target add wasm32-unknown-unknown aarch64-unknown-linux-musl
+          cargo check -p rusty_json_turbo-accel --locked --target wasm32-unknown-unknown --no-default-features
+          cargo check -p rusty_json_turbo-accel --locked --target aarch64-unknown-linux-musl --no-default-features
       - name: The allocation census runs and reports non-zero work
         run: |
           cargo run -p rusty_json_turbo-bench --release --locked --features profile -- \

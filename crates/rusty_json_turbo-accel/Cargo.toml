@@ -1,0 +1,28 @@
+[package]
+name = "rusty_json_turbo-accel"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+rust-version.workspace = true
+# Ours alone: no upstream serde code reaches this crate.
+authors = ["Mata Network <https://www.mata.network>"]
+readme = "README.md"
+documentation = "https://docs.rs/rusty_json_turbo-accel"
+categories = ["parser-implementations", "no-std"]
+keywords = ["simd", "json", "sse2", "avx2", "performance"]
+description = "The SIMD island for rusty_json_turbo: SSE2 and AVX2 twins of the JSON byte scanners, each written against a scalar oracle that stays in the tree and is reachable at runtime. The one crate in the workspace where `unsafe` is allowed, so the parser itself can forbid it. MIT OR Apache-2.0."
+
+[dependencies]
+# None, and that is a contract. This crate is pure Rust with no build script.
+
+[features]
+default = ["std"]
+# Runtime CPU detection needs `std`. Without it the crate still compiles and
+# still uses SSE2 on x86-64 (which is baseline for the target and therefore
+# needs no detection); it just cannot reach AVX2.
+std = []
+
+[lints]
+workspace = true

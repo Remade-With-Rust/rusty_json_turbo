@@ -221,7 +221,7 @@ pub fn method_line(cfg: &Config, commit: &str) -> String {
          pairs={}; window={} ms per arm-sample, statistic=min per-iteration time in the window, \
          verdict=median of paired ratios + paired wins with z; clock=std::time::Instant (QPC on Windows); \
          pinned={}; allocator={} (BOTH arms -- it is a property of the binary); \
-         isa=scalar (no kernels wired); work parity: identical input bytes, output length asserted equal \
+         isa={} (machine offers {}); work parity: identical input bytes, output length asserted equal \
          per pair for serde_json-shaped arms; stringify buffers pre-sized and cleared (growth excluded); \
          competitors: simd-json input copy excluded from the timed region; \
          machine={} {} ; commit={}{}",
@@ -229,6 +229,8 @@ pub fn method_line(cfg: &Config, commit: &str) -> String {
         cfg.window.as_millis(),
         cfg.pinned,
         crate::alloc_arm::name(),
+        turbo::counters::isa(),
+        turbo::counters::isa_available(),
         std::env::consts::OS,
         std::env::consts::ARCH,
         commit,

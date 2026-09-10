@@ -1,0 +1,16 @@
+﻿pair,file,column,arm,min_ns,bytes
+1,canada,dom-stringify,swar8,2045800,2063469
+1,canada,dom-stringify,avx2,2080500,2063469
+2,canada,dom-stringify,swar8,2026900,2063469
+2,canada,dom-stringify,avx2,2027400,2063469
+3,canada,dom-stringify,swar8,2010100,2063469
+3,canada,dom-stringify,avx2,2070700,2063469
+4,canada,dom-stringify,swar8,2001300,2063469
+4,canada,dom-stringify,avx2,2034900,2063469
+5,canada,dom-stringify,swar8,2015900,2063469
+5,canada,dom-stringify,avx2,2045700,2063469
+6,canada,dom-stringify,swar8,2125500,2063469
+6,canada,dom-stringify,avx2,2021600,2063469
+7,canada,dom-stringify,swar8,2091500,2063469
+7,canada,dom-stringify,avx2,2059500,2063469
+8,canada,dom-stringify,swar8,2015200,2063469

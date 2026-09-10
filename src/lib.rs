@@ -437,6 +437,10 @@ mod iter;
 mod lexical;
 mod number;
 mod read;
+// The exact SWAR primitives serve the non-`accel` build. With the island on,
+// the same predicates live in `rusty_json_turbo-accel`, tested there against
+// the same oracle and cross-checked against this crate's escape table.
+#[cfg(not(feature = "accel"))]
 mod swar;
 
 #[cfg(feature = "raw_value")]

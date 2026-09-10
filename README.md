@@ -133,7 +133,7 @@ of having instruments first.
 |---|---|---|:--:|
 | **Whitespace off the per-byte path** | every token boundary | skip a whitespace run in one walk of the slice instead of a `Result<Option<u8>>` round trip per byte | ✅ **landed** — see below |
 | **Wide whitespace scan** | pretty-printed input | eight bytes per step (SWAR), with a short-run peel and the scalar walk kept as the oracle | ✅ **landed** — see below |
-| SIMD whitespace scan | pretty-printed input | an SSE2/AVX2 twin of the above, if the measurement justifies an `unsafe` island | not started |
+| **SIMD whitespace scan** | pretty-printed input | an SSE2/AVX2 twin of the above, in a separate crate so the parser never writes `unsafe` | ✅ **landed** — SSE2 ships; AVX2 was built, measured and left switched off (see below) |
 | Bulk `Value` map build | DOM parse | build the map from a sorted vector instead of inserting per entry; reserve on sequences | **promoted** — measured allocation-bound, ~1 alloc per 31 input bytes |
 | Arena `Value` (additional type) | DOM parse | bump-allocated nodes, flat objects, interned keys — the shape that gives the fastest competitor its 1.5–3.6x DOM lead | planned, v1.x |
 | SIMD string scan | string-heavy input | 16/32-byte twin of the existing 8-byte SWAR quote/backslash/control scan | **demoted** — mean string run is 19 bytes, 98.3% already zero-copy, and upstream is already 8-byte SWAR with `memchr2` |
@@ -210,6 +210,38 @@ The step is exact, not approximate — below a bound where eight more digits
 provably cannot overflow a `u64`, the chunk takes the same branch the
 byte-at-a-time loop would have taken, including the digit at which a long number
 switches to the slow float path.</sub>
+
+**The SIMD island (M3), against the 8-byte scan it replaces.** SSE2 ships;
+AVX2 was built and left switched off.
+
+| file | workload | before | after | ratio |
+|---|---|---:|---:|---:|
+| citm_catalog | scan | 2,075 MB/s | **2,297 MB/s** | **1.105x** |
+| s4-media-probe | scan | 1,704 MB/s | **1,873 MB/s** | **1.094x** |
+| citm_catalog | struct parse | 1,321 MB/s | **1,419 MB/s** | **1.075x** |
+| twitter | struct stringify | 2,056 MB/s | **2,165 MB/s** | **1.062x** |
+| twitter | DOM stringify | 1,894 MB/s | **2,012 MB/s** | **1.060x** |
+| citm_catalog | struct stringify | 1,870 MB/s | **1,964 MB/s** | **1.053x** |
+| controls ×2 | — | — | — | 1.001x–1.006x (unmoved) |
+
+<sub>**AVX2 lost and SSE2 won, which is the interesting part.** The 32-byte
+kernel beat the baseline on `citm_catalog` and was *slower* on `twitter`
+(0.958x) and `canada`; the 16-byte kernel beat it on every cell. The longest
+whitespace run anywhere in the corpus is **29 bytes**, so a 32-byte step is
+never fully used, while its costs — a call that cannot inline, a wider tail,
+`vzeroupper` — are paid on every run. The widest register available is not the
+right one, and only the run-length census says so. AVX2 stays in the tree and
+stays reachable through `RJT_ISA=avx2`, so it can be re-measured on a machine
+or a corpus with longer runs rather than deleted on one box's answer.</sub>
+
+<sub>The vector code lives in its own crate, `rusty_json_turbo-accel`, with no
+dependencies and no build script, so the parser never writes `unsafe` for a
+vector load. Every kernel is written against a scalar oracle that stays in the
+tree permanently and can be switched on in production with `RJT_ISA=scalar` —
+a fast path whose scalar twin has been deleted cannot be checked. The twins are
+tested against that oracle over all 256 byte values at every offset across the
+8, 16 and 32-byte boundaries, and the byte-identical gate runs at all four
+rungs.</sub>
 
 <sub>**One honest caveat on the absolute MB/s above.** They were taken before
 the corpus was pinned platform-independent. There was no root `.gitattributes`,

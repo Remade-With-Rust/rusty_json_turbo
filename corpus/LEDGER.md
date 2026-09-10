@@ -1370,3 +1370,144 @@ rather than on the appeal of the widest available register. And after three
 refutations in a row -- B4x, B15, and B10 killed at the census -- the step
 count is a price, not a promise: it says the arm will do less work, and only
 the clock decides whether it takes less time.
+
+### 2026-09-10 -- M3: the SIMD island lands, and the widest register loses
+
+`rusty_json_turbo-accel` is the one crate in the workspace where `unsafe` is
+allowed. It carries SSE2 and AVX2 twins of the two byte scanners, each written
+against a scalar oracle that stays in the tree permanently and is reachable in
+production through `RJT_ISA=scalar`. No `unsafe` for a vector load is written
+in the parser, which is what lets the parser keep tightening toward
+`forbid(unsafe_code)`.
+
+No dependencies, no build script. That was a constraint, not a preference: the
+crate advertises an empty dependency tree.
+
+#### The headline, and it is not the one the hardware suggests
+
+**SSE2 ships. AVX2 does not, and the reason is measured.**
+
+| cell | SSE2 vs SWAR | AVX2 vs SWAR |
+|---|---:|---:|
+| `citm_catalog` scan | **1.107x** (61/61) | 1.099x (61/61) |
+| `citm_catalog` struct-parse | **1.074x** (61/61) | 1.072x (61/61) |
+| `twitter` scan | **1.020x** | **0.992x**, best-of-N **0.958x** |
+| `canada` scan | 1.009x | 0.997x, best-of-N 0.976x |
+
+AVX2 beat the 8-byte baseline on one file and lost on the other two. SSE2 beat
+it on **every** cell. The cause is the run-length census taken before either
+was written: **the longest whitespace run anywhere in the corpus is 29 bytes**,
+so a 32-byte step is never fully used, while its costs -- a call that cannot
+inline, a wider tail, `vzeroupper` on exit -- are paid on every run. A 16-byte
+step is fully used by `citm_catalog`'s 17-to-29-byte runs and by `twitter`'s
+9-to-16-byte ones.
+
+AVX2 stays in the tree and stays reachable, so this can be re-measured on a
+machine or a corpus with longer runs rather than deleted on one box's answer.
+
+#### The shipped result
+
+Same binary, one environment variable between the arms, 61 pairs, ABBA, pinned.
+`RJT_ISA=swar` is the pre-M3 8-byte path; `sse2` is what now ships. Raw:
+`corpus/runs/2026-09-10-m3-shipped-sse2.txt` and `-m3-escape-guarded.txt`.
+
+**Whitespace scanner:**
+
+| file | column | before | after | ratio | wins, z | best-of-N |
+|---|---|---:|---:|---:|---:|---:|
+| citm_catalog | scan | 2,075 MB/s | **2,297 MB/s** | **1.105x** | 61/61, z = -7.81 | 1.115x |
+| s4-media-probe | scan | 1,704 MB/s | **1,873 MB/s** | **1.094x** | 60/61, z = -7.55 | 1.060x |
+| citm_catalog | struct-parse | 1,321 MB/s | **1,419 MB/s** | **1.075x** | 61/61, z = -7.81 | 1.020x |
+| s4-media-probe | dom-parse | 386 MB/s | **408 MB/s** | **1.051x** | 50/61, z = -4.99 | 1.106x |
+| twitter | scan | 1,529 MB/s | 1,559 MB/s | 1.023x | 54/61 | 1.001x |
+| citm_catalog | dom-parse | 480 MB/s | 487 MB/s | 1.016x | 44/61 | 1.034x |
+| canada | scan (control) | 1,019 MB/s | 1,026 MB/s | 1.002x | 33/61 | 1.011x |
+| canada | dom-stringify (control) | 1,032 MB/s | 1,037 MB/s | 1.006x | 37/61 | 0.987x |
+
+**Escape scanner:**
+
+| file | column | before | after | ratio | wins, z | best-of-N |
+|---|---|---:|---:|---:|---:|---:|
+| twitter | struct-stringify | 2,056 MB/s | **2,165 MB/s** | **1.062x** | 60/61, z = -7.55 | 1.062x |
+| twitter | dom-stringify | 1,894 MB/s | **2,012 MB/s** | **1.060x** | 61/61, z = -7.81 | 1.063x |
+| citm_catalog | struct-stringify | 1,870 MB/s | **1,964 MB/s** | **1.053x** | 59/61, z = -7.30 | 1.055x |
+| citm_catalog | dom-stringify | 1,199 MB/s | **1,236 MB/s** | **1.032x** | 58/61, z = -7.04 | 1.051x |
+| s4-ocr-i18n | dom-stringify | 765 MB/s | 784 MB/s | 1.028x | 51/61 | 1.031x |
+| twitter | dom-parse (control) | 375 MB/s | 376 MB/s | 1.001x | 30/61 | 0.989x |
+
+Every target gains, both controls are flat, and nothing anywhere is below
+0.987x. These stack on top of the earlier bricks rather than replacing them:
+this is the wide scan against the 8-byte SWAR that B1s and B3 already landed.
+
+#### Two things were built, measured, and thrown away on the way
+
+**An escalation gate for the whitespace scanner: REVERTED.** The idea was to
+take one inline SWAR step before calling any vector kernel, since a
+`#[target_feature]` function cannot be inlined and so pays call and setup cost
+a two-byte run cannot repay. It cost `citm_catalog` half its win -- scan fell
+from 1.099x to 1.046x, struct-parse from 1.072x to 1.016x -- and did **not**
+recover `twitter`, which stayed at 0.978x. The theory was wrong.
+
+Reading the run lengths afterwards says why it could not have worked. After
+the parser's own 4-byte peel, `twitter`'s 12,118 runs of 9-16 bytes have 5 to
+12 bytes left, so an 8-byte step often does not finish them and the vector call
+happened anyway -- the gate added a step without avoiding anything. And
+`citm_catalog`'s runs of 17-32 have 13 to 28 left, which one wide step finishes
+outright, so there the gate was pure added cost.
+
+**A length guard for the escape scanner: KEPT, and it is a different thing.**
+Before it, `citm_catalog` struct-stringify measured **0.970x** on the best-of-N
+statistic -- right at this project's own 0.97x floor -- because its mean string
+is 8.3 bytes, shorter than one vector step, so the kernel's loop condition
+failed immediately and the call was pure cost. The guard declines to make a
+call that provably cannot pay:
+
+| cell | before guard | after guard |
+|---|---:|---:|
+| citm_catalog struct-stringify | 0.993x, best-of-N **0.970x** | **1.053x**, best-of-N 1.055x |
+| citm_catalog dom-stringify | -- | **1.032x**, best-of-N 1.051x |
+| twitter struct-stringify | 1.080x | 1.062x |
+
+The distinction matters and is the reusable part: the failed gate added a
+**scan step** that the vector call then repeated; the guard adds a **length
+compare** and removes a call. One does more work to avoid work; the other just
+declines.
+
+#### The bug the twin test caught on its first run
+
+The escalation gate's `swar_step` returned `Option<usize>`, collapsing "fewer
+than eight bytes remain" and "all eight were whitespace" into one `None`. The
+caller then advanced by eight over bytes that had never been examined, and a
+one-byte buffer came back with the wrong index.
+
+It was caught immediately, and only because the **dispatcher** had just been
+added to the twin table alongside the kernels. Testing the kernels alone would
+have missed it entirely: every kernel was correct, and the composition was not.
+`SwarStep` is now a three-way enum so the two cases cannot be confused again.
+
+#### What the island is gated by
+
+- **Twins against the oracle** over every one of the 256 byte values at every
+  offset in buffers spanning the 8, 16 and 32-byte boundaries, uniform runs of
+  every length 0-70 across all three boundaries, and seeded mixed content --
+  more than 500,000 assertions per scanner, asserted to be more than 500,000 so
+  the spread cannot quietly thin out.
+- **The two bytes a careless range test swallows**: `0x0B` and `0x0C` are not
+  JSON whitespace, and a `b <= 0x20` test would take them.
+- **The signedness trap**, which is why `b < 0x20` is written `b & 0xE0 == 0`
+  everywhere: SSE2 and AVX2 byte compares are SIGNED, so a naive `cmplt`
+  against `0x20` flags every byte from `0x80` up and splits UTF-8 sequences.
+- **A poison test** asserting the suite would catch exactly those two mistakes,
+  because a suite that cannot fail is not a gate.
+- **The byte-identical contract at every rung**: oracle, soak and the S4
+  fixtures all green under `RJT_ISA=scalar`, `swar`, `sse2` and `avx2`.
+- **Cross-target**: the island compiles for `wasm32-unknown-unknown`,
+  `aarch64-unknown-linux-musl` and `x86_64-unknown-linux-gnu` with
+  `--no-default-features`, falling back to SWAR where there is no x86.
+
+#### One instrument note
+
+Every method line now carries `isa=<rung> (machine offers <ceiling>)`. The two
+are printed separately on purpose: a run narrowed by an override and a run on a
+machine with nothing wider produce the same number for very different reasons,
+and a ledger row that cannot tell them apart is not evidence.

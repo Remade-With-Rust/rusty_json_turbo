@@ -43,6 +43,9 @@ exclude = [
 name = "serde_json"
 
 [dependencies]
+# The SIMD island. Ours, pure Rust, no build script, no dependencies of its
+# own -- so the "empty dependency tree" claim in the README still holds.
+rusty_json_turbo-accel = { version = "0.1.0", path = "crates/rusty_json_turbo-accel", default-features = false, optional = true }
 indexmap = { version = "2.2.3", optional = true }
 itoa = "1.0"
 memchr = { version = "2", default-features = false }
@@ -81,9 +84,11 @@ features = ["float_roundtrip", "raw_value", "unbounded_depth"]
 ### FEATURES #################################################################
 
 [features]
-default = ["std"]
+default = ["std", "accel"]
 
-std = ["memchr/std", "serde_core/std"]
+# `accel/std` is what lets the island detect AVX2 at runtime; without `std`
+# it still reaches SSE2 on x86-64, which is baseline and needs no detection.
+std = ["memchr/std", "serde_core/std", "rusty_json_turbo-accel?/std"]
 
 # Provide integration for heap-allocated collections without depending on the
 # rest of the Rust standard library.
@@ -131,6 +136,15 @@ unbounded_depth = []
 # way to compare them without also comparing two code layouts, and layout alone
 # has measured +-13% between two builds of this crate.
 knobs = ["std"]
+# The SIMD island (M3). A separate crate so THIS one can keep tightening
+# toward `forbid(unsafe_code)` while still reaching a wide scan; the parser
+# never writes `unsafe` for a vector load. Pure Rust, no build script, no
+# transitive dependencies, so the empty-dependency-tree claim survives.
+#
+# On by default, because a drop-in replacement that needs a feature flag to be
+# fast is not a drop-in replacement. `RJT_ISA=scalar` reaches the oracle at
+# runtime, so the wide path can always be switched off without a rebuild.
+accel = ["dep:rusty_json_turbo-accel"]
 # The deterministic work counters in `counters`. Implies `knobs` so a counting
 # build can also toggle the arm it is counting. NEVER quote a timing from a
 # build with this on: it adds an atomic increment to the hottest paths, and it

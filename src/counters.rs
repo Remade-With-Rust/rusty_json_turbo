@@ -185,6 +185,40 @@ impl Counters {
     }
 }
 
+/// Which SIMD rung the byte scanners are actually running.
+///
+/// Belongs on every method line that quotes a scan: `"avx2"`, `"sse2"`,
+/// `"swar"` or `"scalar"`, honouring `RJT_ISA`. Returns `"swar"` when the
+/// island is not linked at all, which is what the crate then does.
+#[must_use]
+pub fn isa() -> &'static str {
+    #[cfg(feature = "accel")]
+    {
+        rusty_json_turbo_accel::isa().name()
+    }
+    #[cfg(not(feature = "accel"))]
+    {
+        "swar"
+    }
+}
+
+/// The widest rung this machine could offer, whatever `RJT_ISA` asked for.
+///
+/// Printed beside [`isa`] so a run that was narrowed by an override is
+/// distinguishable from one on a machine that has nothing wider -- two very
+/// different reasons for the same number.
+#[must_use]
+pub fn isa_available() -> &'static str {
+    #[cfg(feature = "accel")]
+    {
+        rusty_json_turbo_accel::isa_available().name()
+    }
+    #[cfg(not(feature = "accel"))]
+    {
+        "swar"
+    }
+}
+
 /// Whether this build carries the counters, so a caller cannot read a zero as
 /// "no work happened" when it means "nothing was counted".
 #[must_use]
