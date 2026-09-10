@@ -28,8 +28,9 @@ public API the house ships.
 
 ## The headline
 
-**Status: the instruments are built and the first brick has landed.** What
-exists today:
+**Status: five bricks landed, and the numbers below are quoted net of the
+measurement bias that made the first drafts of them look better than they
+were.** What exists today:
 
 - **The fork**, at serde_json 1.0.151 (`afdf6fc`), unchanged in behaviour.
   Every upstream test passes against it.
@@ -47,7 +48,8 @@ exists today:
   actually go, a scan-only ceiling that bounds every value-construction change,
   and deterministic work counters with an A/B knob — so a change can be decided
   by counting the work it removed, on a machine too busy to trust a clock.
-- **The first brick**, below.
+- **Five landed bricks**, below, and four refuted ones with the arithmetic
+  that killed each — a refutation is a result and it is written down.
 - **The plan.** [`docs/plans/fast_mission.md`](docs/plans/fast_mission.md):
   the brick catalog, the gates, the milestones, the decisions.
 
@@ -59,14 +61,38 @@ exists today:
 | `unsafe` | 12 sites | 12 sites inherited; **M2 moves them to one audited island** |
 | `no_std + alloc`, `wasm32` | yes | **yes** -- compiled on 9 targets, and both *tested*: the suite runs on `wasm32-wasip1`, `no_std + alloc` runs in four feature configurations, and the browser target's output bytes are checksum-matched to native |
 | License | MIT OR Apache-2.0 | **MIT OR Apache-2.0** |
-| Speed | the baseline | **measured before claimed** -- see the ledger |
+| Speed | the baseline | **1.21x-1.23x** on string-heavy stringify, **1.21x** on key-heavy struct parse, **1.26x** on typed streams over a reader, **1.89x** on `RawValue` over a reader — each net of instantiation bias, each with its method line |
 
 ### Performance -- measured rather than asserted
 
 No number enters this README without a method line, and each brick's ledger row
-lands before its sentence here. The campaign has just started: one brick is in,
-so the honest summary is "measurably less work on the parsing path, not yet a
-headline speed claim against serde_json".
+lands before its sentence here.
+
+**And every ours-against-upstream figure here is quoted NET of instantiation
+bias, which is the correction most forks never make.** At the M0 commit this
+fork's source was character-for-character upstream's, and the same in-process
+comparison still read from **0.807x to 1.004x depending on the cell** — two
+builds of the same crate get laid out and inlined differently, and for the
+serializer that was worth 19%. So the first drafts of the table below said
+1.43x and 1.53x; the honest figures are **1.21x-1.23x**. The bias itself moves
+about 5% between reference builds, so anything inside 5% of 1.00 is reported as
+unchanged rather than as a win.
+
+| cell | reported | bias at identical source | **net** |
+|---|---:|---:|---:|
+| twitter, struct stringify | 1.53x | 0.807x | **1.234x** |
+| twitter, DOM stringify | 1.43x | 0.840x | **1.214x** |
+| citm_catalog, struct parse | 1.22x | 0.979x | **1.212x** |
+| citm_catalog, DOM parse | 1.09x | 1.004x | **1.091x** |
+| citm_catalog, struct stringify | 1.12x | 0.965x | **1.075x** |
+| twitter, DOM parse | 1.04x | 1.003x | **1.050x** |
+| canada, struct parse | 1.04x | 1.000x | **1.036x** |
+| twitter, struct parse | 0.99x | 1.001x | 0.988x — no gain, and said so |
+
+Ten of twelve cells are genuine gains; they are just smaller than the raw
+comparison suggested, and the ordering changes — `citm_catalog` struct parse
+turns out to be one of the best cells rather than a middling one, because it
+had almost no bias to give back.
 
 The M0 baseline is in [`corpus/LEDGER.md`](corpus/LEDGER.md) with its pin,
 pairs, window, null-arm floor and machine: upstream against itself (the floor,
@@ -134,8 +160,8 @@ of having instruments first.
 | **Whitespace off the per-byte path** | every token boundary | skip a whitespace run in one walk of the slice instead of a `Result<Option<u8>>` round trip per byte | ✅ **landed** — see below |
 | **Wide whitespace scan** | pretty-printed input | eight bytes per step (SWAR), with a short-run peel and the scalar walk kept as the oracle | ✅ **landed** — see below |
 | SIMD whitespace scan | pretty-printed input | an SSE2/AVX2 twin of the above, in a separate crate so the parser never writes `unsafe` | ❌ **built, then switched OFF by default** — measured against *upstream* it loses on 13 of 15 cells. A `#[target_feature]` function cannot be inlined, so reaching the island costs more inlining than the width buys. Reachable with `--features accel`; see `corpus/LEDGER.md` |
-| Bulk `Value` map build | DOM parse | build the map from a sorted vector instead of inserting per entry; reserve on sequences | **promoted** — measured allocation-bound, ~1 alloc per 31 input bytes |
-| Arena `Value` (additional type) | DOM parse | bump-allocated nodes, flat objects, interned keys — the shape that gives the fastest competitor its 1.5–3.6x DOM lead | planned, v1.x |
+| **Map as a sorted vector** | DOM parse | replace `Map`'s `BTreeMap` with a sorted `Vec` — same sorted iteration order, so it is a drop-in | **promoted.** The median object arity is **2**, 97.7% of `citm_catalog`'s objects hold eight keys or fewer, and a `BTreeMap` node is built for eleven pairs — so ~80% of each node is unused. An *unpaired* probe puts the whole value-model change around **1.45x** on `citm_catalog` (median of nine runs, spread 0.97x–1.74x). That decides the brick is worth **building**; it is not a figure to quote, and a paired A/B will set the real one |
+| Arena `Value` (additional type) | DOM parse | interned keys and inline short strings beside the sorted-vector map — the shape that gives the fastest competitor its 1.5–3.6x DOM lead | **planned, v1.x, and the ceiling is now measured.** The scan column builds *nothing*, so `dom-parse` above it is the price of building a `Value`: **70%-85% of a DOM parse**, a **3.29x** ceiling on `citm_catalog` and **6.89x** on the widest S4 fixture. Key reuse is 80.6x on citm, 142x on twitter and **1,418.7x** on frame-telemetry — 46,816 allocations for 33 distinct names |
 | SIMD string scan | string-heavy input | 16/32-byte twin of the existing 8-byte SWAR quote/backslash/control scan | **demoted** — mean string run is 19 bytes, 98.3% already zero-copy, and upstream is already 8-byte SWAR with `memchr2` |
 | **Escape-mask writer** | stringify | per-chunk "needs escape" mask, one write per clean run | ✅ **landed** — see below |
 | **8-digit integer / fraction parse** | number-heavy input | validate and convert eight ASCII digits in one 8-byte load, per-digit tail | ✅ **landed** — see below |
@@ -144,6 +170,69 @@ of having instruments first.
 | ASCII fast-path UTF-8 validation | `from_slice` | validate the ASCII run wide, walk only non-ASCII tails | **reframed** — 18,099 short validations per `twitter` parse, but validating once up front is *not* byte-identical, so that form is rejected |
 | **Sink specialisation** | stringify | fold separators into adjacent writes; write integers and floats into spare capacity | **promoted** — measured **2.6 bytes per sink call** on `citm_catalog`, about 7.3 calls per key; it must win on call count alone, and the count says there is room |
 | Correctly-rounded float parse | float-heavy input | core's Eisel-Lemire, replacing the vendored bignum path | planned, v1.x, opt-in (it changes output) |
+
+**One price worth knowing before you set a feature flag: `preserve_order` costs
+you 1.16x-1.45x on DOM parsing.** Measured as two binaries with one flag
+between them, 15 pairs, pinned, ABBA — `IndexMap` loses to `BTreeMap` on every
+DOM cell, unanimously, at z = +3.87, while `struct-parse` (which builds no
+`Map` and so cannot be reached by the change) stays flat as the control. The
+cost is the hashing: hashing two keys to build a two-element map is pure
+overhead against a `BTreeMap` that stores both in one node. Insertion order is
+worth having — it is just not free, and now the price is written down.
+
+##### Landed: `RawValue` over a reader, as a range instead of a byte stream
+
+If you hold JSON you do not want to parse — routing it, storing it, forwarding
+it — `RawValue` is the right tool, and over a reader upstream builds it by
+pushing **every consumed byte** into a `Vec`, one at a time, through `next()`
+and `discard()`. Since this fork's reader holds a window, those bytes are
+already contiguous: the capture does not need accumulating, it needs
+*addressing*. So `begin_raw_buffering` records where the value starts, `fill`
+declines to slide the window while a capture is live, and the text is taken in
+**one** copy at the end.
+
+Priced on a 10,000-document NDJSON log stream (2.6 MB), release, best-of-7,
+all four arms in one process:
+
+| arm | before | after |
+|---|---:|---:|
+| `Value` over a reader | 157 MB/s | 165 MB/s |
+| **`RawValue` over a reader** | **257 MB/s** | **466 MB/s** |
+| `RawValue` over a slice | 1,074 MB/s | 1,048 MB/s |
+| `RawValue` over a reader, upstream serde_json | 259 MB/s | 246 MB/s |
+
+**1.81x on the target arm, and the control held** — the slice arm is in the
+same process on the same file and this change provably cannot reach it
+(`SliceRead`'s capture was already a range), and it moved 0.98x. Against
+upstream in the same process, **1.009x → 0.528x: 1.89x faster**. The
+reader-to-slice gap the pricing test existed to find closes from 4.18x to
+2.25x.
+
+Growing and returning the window changes no output at all, so a byte-identical
+gate cannot see it; the work counters can, and do: **10,000 captures, 2,603,127
+bytes, zero window growths** on that stream, against 2 growths and 1 return on
+a single 60 KB value.
+
+##### Landed: streams over a reader
+
+A log stream is the opposite shape from the benchmark corpus — 10,000
+documents of ~260 bytes rather than one large blob — and it is all reader, so
+it is where the buffered reader pays most. 15 pairs, leading arm rotated:
+
+| arm | ours | upstream | ratio |
+|---|---:|---:|---:|
+| **`StreamDeserializer` / reader, typed struct** | **221 MB/s** | 176 | **1.26x faster** |
+| **`StreamDeserializer` / reader, `Value`** | **156 MB/s** | 140 | **1.11x faster** |
+| per-document `from_slice`, typed | 273 MB/s | 274 | parity |
+| `StreamDeserializer` / slice, typed | 275 MB/s | 279 | parity |
+
+Two findings from that cell worth having: **`StreamDeserializer` costs nothing**
+against slicing the stream yourself (0.993x-1.020x across four
+configurations), and **per-document cost is almost entirely fixed rather than
+proportional to size** — the pretty variant is 325 bytes per document against
+the minified 261 and is *faster per document*, because the extra bytes are
+whitespace the wide scanner eats cheaply while the setup is the same either
+way.
 
 ##### Landed: the whitespace path
 

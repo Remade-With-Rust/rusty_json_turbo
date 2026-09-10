@@ -3308,3 +3308,192 @@ is validated by construction and by the path-form runs above, not yet by a
 fetch. And no consumer has been re-measured: G8 asks for S4 numbers re-taken on
 the consumers' real payloads, which is the next piece of work and needs the
 swap live rather than local.
+
+### 2026-09-10 -- B11 opens: the value model is a 3.3x-6.9x ceiling, and the first lever LOSES
+
+Every brick this project has landed has been fighting over the same 15-30% of
+a DOM parse. The `scan` column has been saying so all along and nobody read it
+out loud: **it walks the document and builds nothing**, so whatever `dom-parse`
+costs above it is the price of building a `Value`.
+
+| file | scan | dom-parse | scanning is | **ceiling if construction were free** |
+|---|---:|---:|---:|---:|
+| s4-frame-telemetry | 525,700 ns | 3,623,000 | 15% of dom-parse | **6.89x** |
+| twitter | 385,200 | 1,457,400 | 26% | **3.78x** |
+| canada | 1,917,600 | 6,461,300 | 30% | **3.37x** |
+| citm_catalog | 806,800 | 2,655,600 | 30% | **3.29x** |
+
+**Value construction is 70% to 85% of a DOM parse.** For contrast, the
+whitespace scanner -- the subject of bricks B1, B1s and a SIMD island -- has
+this much left on the table after all of it: **1.02x on twitter, 1.19x on citm,
+1.05x on canada, and 0.95x on s4-frame-telemetry**, which is minified and has
+no whitespace to skip. The largest remaining target in the project is not the
+parser. It is the type the parser is asked to build.
+
+And that reframes the struct/DOM split: scanning is **47% to 75%** of
+`struct-parse` but only **15% to 30%** of `dom-parse`. A typed struct is
+already close to the parser's floor; `Value` is not.
+
+#### Three candidate levers, from the allocation census
+
+| finding | citm | twitter | s4-frame-telemetry |
+|---|---|---|---|
+| key occurrences vs distinct names | 80.6x reuse | 142x | **1,418.7x** -- 46,816 allocations for 33 names |
+| allocations of <= 8 bytes | 54.8% | -- | 82.6% |
+| `BTreeMap` nodes' share of bytes | ~100% of 7.68 MB | -- | -- |
+
+So: intern the keys, replace the map, inline the short strings.
+
+#### LEVER ZERO, AND IT COST NOTHING TO PRICE: `preserve_order` already ships one
+
+The crate carries a second map representation behind a feature flag --
+`preserve_order` swaps `BTreeMap` for `IndexMap`. That is a free experiment in
+whether the map representation is a lever at all: two binaries, one flag, no
+new code.
+
+It is a lever. It points the wrong way.
+
+| cell | btreemap / indexmap | wins | z |
+|---|---:|---:|---:|
+| s4-frame-telemetry dom-parse | **0.689x** | 15/15 | +3.87 |
+| canada dom-parse | **0.737x** | 15/15 | +3.87 |
+| twitter dom-parse | **0.793x** | 15/15 | +3.87 |
+| citm_catalog dom-parse | **0.855x** | 15/15 | +3.87 |
+| citm_catalog **struct-parse** (control) | 0.963x median, **1.022x best-of-N** | 13/15 | flat |
+
+Ratios are btreemap/indexmap, so **below 1.000 means `BTreeMap` is faster**.
+`IndexMap` costs **1.16x to 1.45x of a DOM parse**, unanimously, at z = +3.87
+on four of five cells. The control is the shape that makes this admissible:
+`struct-parse` builds no `Map` at all, so the change cannot reach it, and it
+reads flat -- 0.963x on the median and 1.022x on best-of-N, straddling 1.00.
+
+**Two things follow, and the second is the useful one.**
+
+First, a user-facing fact worth documenting: **turning on `preserve_order`
+costs you 1.16x-1.45x on DOM parsing.** That is a real price for insertion
+order, and it was not written down anywhere.
+
+Second, and this is what it buys for B11: **the cost is the hashing.**
+`IndexMap` is a hash table beside a `Vec`, and the census says the median
+object arity is **2** with 97.7% of citm's objects at eight keys or fewer.
+Hashing two keys to build a two-element map is pure overhead against a
+`BTreeMap` that stores both in one node.
+
+That is a warning aimed straight at **interning**, because an interner is a
+`HashMap` lookup per key occurrence -- exactly the cost that just lost. The
+sorted-`Vec` lever is untouched by this result (a `Vec` of two pairs is one
+allocation and no hashing), and the inline-string lever is untouched too. But
+the lever the census made look most attractive -- 1,418.7x key reuse! -- is the
+one now under the most suspicion, because trading an allocation for a hash is
+the trade that just failed by 1.45x.
+
+#### THE THREE LEVERS, PRICED -- and the value model beats the shipped `Value`
+
+`b11_price.rs` builds one generic value type with one visitor and four storage
+models, so the only thing differing between arms is how a key, a string and a
+map are represented. `Base` is the control: the probe's own code wearing
+`Value`'s shape, so the probe's overhead cancels out of every other ratio.
+
+Three runs, best-of-9 per arm. Ratios against `Base`, above 1.000 = faster:
+
+| arm | s4-frame-telemetry | citm_catalog | twitter | **canada (natural control)** |
+|---|---|---|---|---|
+| `Intern` | 1.19 / 1.34 / 1.23 | 1.53 / 1.16 / 1.19 | 1.17 / 1.25 / 1.05 | **0.98 / 1.03 / 0.95** |
+| `VecMap` | 1.05 / 1.22 / 1.08 | 1.70 / 1.33 / 1.34 | 1.18 / 1.08 / 0.90 | **1.16 / 1.08 / 0.98** |
+| `All` | 1.20 / 1.36 / 1.32 | **1.74 / 1.52 / 1.44** | 1.20 / 1.36 / 1.29 | **1.09 / 1.02 / 1.03** |
+
+**`canada` is the control the corpus supplied for free**: eight key occurrences
+over six distinct names, 1.3x reuse, so neither interning nor the map
+representation has anything to work with. It reads **0.95x to 1.16x across
+three runs, straddling 1.00** -- which also sizes this instrument's drift at
+roughly +/-10%, and retires the single 1.157x reading that looked like a
+regression in the first run.
+
+#### AND THEN THE INSTRUMENT FAILED ITS OWN THREE-PROBE RULE
+
+The three runs above were written up as "1.27x to 1.50x faster than the shipped
+`Value`, reproducibly". **That was overstated, and a fourth run caught it.**
+Nine readings of `All` against `Base` on `citm_catalog`:
+
+```text
+1.738  1.516  1.442  0.802  1.466  1.454  1.508  0.970  1.511
+```
+
+Seven cluster at 1.44-1.74. **Two read BELOW 1.00**, and the 0.802 was taken
+while `cargo clippy` was compiling in the same session. The arms in this probe
+run block-wise, not paired and not interleaved, so interference lands on
+whichever arm happens to be running -- and because each arm takes its own
+minimum over nine repetitions *within* a run, a contaminated run inflates one
+arm and leaves the others alone. Noise can only inflate a sample, so a reading
+below 1.00 here is the `All` arm being hit, not evidence against it. But that
+reasoning is an argument, and an argument is not a measurement.
+
+**So the honest figure is a median of ~1.45x on `citm_catalog` with a spread of
+0.97x to 1.74x, from an unpaired instrument.** That is enough to decide the
+brick is worth BUILDING. It is not a number to publish, and it was briefly
+written into the README as though it were -- corrected before it shipped.
+
+What a paired A/B would fix: `tools/pinvs.ps1` alternates the leading arm and
+pairs the samples, which is why the `preserve_order` result in this same entry
+carries z = +3.87 and a flat control while this one carries a 0.8x-1.7x spread.
+The probe needs the same treatment before its numbers are quoted -- either two
+binaries behind a feature, or a knob inside one.
+
+What still cannot be claimed either way: the split BETWEEN interning and the
+map. `Intern` alone on citm reads 1.53, 1.16, 1.19, 1.23, 1.16, 1.18, 1.10,
+1.28 -- consistently positive, magnitude unresolved.
+
+#### And the interning suspicion was WRONG, which is worth saying plainly
+
+`IndexMap` losing 1.45x looked like a warning that a hash lookup per key could
+not pay -- and interning is exactly that. It pays anyway: **1.19x-1.34x on
+`s4-frame-telemetry`**, the fixture with 46,816 occurrences of 33 names. The
+difference is what the hash BUYS. `IndexMap` hashes every key and still
+allocates the key; an interner hashes every key and allocates **33 times
+instead of 46,816**. Same lookup, one of them deletes the allocation.
+
+**The law: a shared cost is only a verdict when the thing it buys is the same.**
+Two changes can both add a hash per key and land on opposite sides of 1.00.
+
+#### What is shippable, and what is not
+
+The three levers are not equally available, and the difference is the public
+API rather than the measurement:
+
+- **The map is shippable and looks NON-BREAKING.** A sorted `Vec` iterates in
+  the same order a `BTreeMap` does -- sorted by key -- so `Map`'s iteration
+  contract, its `Debug`, and its serialized output are all unchanged. This is
+  B10 in its respecified form: *stop paying for an eleven-pair node to hold
+  two*, on a corpus whose median object arity is 2 with 97.7% at eight keys or
+  fewer.
+- **Interning is a public-API change.** `Map<String, Value>` hands out
+  `&String` keys; interned keys are indices into a table that has to live
+  somewhere. That is the arena `Value` (B11), a new type beside the old one,
+  not a swap underneath it.
+- **Inline short strings are a public-API change too**, because
+  `Value::String(String)` is public.
+
+So the order of work is: **B10 first** (the map, non-breaking, worth a share of
+the 1.2-1.5x on its own), then B11 (the arena type) as an addition rather than
+a replacement.
+
+**Not built today, deliberately.** `map.rs` is 1,181 lines with 44 public
+functions; the backing store is already abstracted as `type MapImpl`, but the
+iterators and the whole `Entry` API are written against `btree_map`'s concrete
+types. That is a day's work with a large correctness surface, and this project
+does not land parser changes at the end of a long session.
+
+What today actually established, stated at the strength each piece earned:
+
+- **The ceiling is solid.** `scan` against `dom-parse` is two cells measured
+  the same way in the same run, and it says value construction is 70-85% of a
+  DOM parse. Nothing about the probe's noise touches that.
+- **The `preserve_order` refutation is solid** -- paired, ABBA, 15 pairs,
+  z = +3.87, with a control that stayed flat.
+- **The lever numbers are indicative only**, median ~1.45x, from an unpaired
+  instrument that spreads 0.97x-1.74x. They justify building. They do not get
+  quoted.
+
+`crates/rusty_json_turbo-bench/tests/b11_price.rs` prices all three separately
+against a control that is the probe's own code in `Value`'s shape, so the
+probe's overhead cancels and each lever is measured alone.

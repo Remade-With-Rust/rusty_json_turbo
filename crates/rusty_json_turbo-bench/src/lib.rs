@@ -52,6 +52,7 @@ pub mod twitter;
 // enums, `Vec<u8>` fields and high-arity field matchers that S1-S3 never enter.
 // The B6 ceiling probe: the same fields with a hand-written field dispatch,
 // so "what if key matching were free" is a measurement rather than a guess.
+pub mod b11_probe;
 pub mod b6_probe;
 pub mod s4_frame_telemetry;
 // S5: one line of an NDJSON log stream. The only fixture with an absent-vs-null
