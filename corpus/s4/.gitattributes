@@ -1,0 +1,6 @@
+# S4 payloads are DATA, keyed by SHA-256 in MANIFEST.md and benchmarked byte
+# for byte. `core.autocrlf=true` on a Windows checkout would rewrite every
+# newline, changing the size, the whitespace census and every hash -- exactly
+# what happened to S1-S3 (twitter.json: 646,995 bytes here, 631,515 in
+# corpus/README.md). `-text` pins them.
+*.json -text

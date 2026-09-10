@@ -1,0 +1,329 @@
+{
+  "config_version": 3,
+  "profile": "disco-node",
+  "identity": {
+    "did": null,
+    "device_label": "studio-01",
+    "keystore": {
+      "backend": "spacedb-store",
+      "kdf": {
+        "name": "argon2id",
+        "m_cost_kib": 262144,
+        "t_cost": 3,
+        "p_cost": 4
+      },
+      "aead": "aes-256-gcm",
+      "rotate_days": 90,
+      "require_presence": true,
+      "hardware_bound": false
+    },
+    "roster": {
+      "hard_cap": 16,
+      "signed_at_tolerance_secs": 300,
+      "allow_self_issue": true
+    }
+  },
+  "store": {
+    "layer": "L0",
+    "path": "F:\\mata\\node\\store",
+    "engine": "kv",
+    "encrypt_at_rest": true,
+    "fsync": "on-commit",
+    "cache_mib": 512,
+    "compression": {
+      "codec": "rusty_zstd",
+      "level": 9,
+      "long_window": true,
+      "dict": null
+    }
+  },
+  "crdt": {
+    "layer": "L1",
+    "reactive_queries": true,
+    "gc_tombstones_days": 30
+  },
+  "consistency": {
+    "layer": "L3",
+    "default_tier": "convergent",
+    "allow_strong": false,
+    "read_your_writes": true
+  },
+  "replica": {
+    "layer": "L2",
+    "transport": {
+      "kind": "iroh",
+      "quic": true,
+      "mdns": true,
+      "relays": [
+        "relay-eu-1.mata.example",
+        "relay-us-3.mata.example"
+      ],
+      "stun": null,
+      "max_streams": 64
+    },
+    "anti_entropy": {
+      "interval_s": 15,
+      "jitter_s": 4,
+      "batch_entries": 512,
+      "gossip_fanout": 3
+    }
+  },
+  "durability": {
+    "layer": "L2",
+    "erasure": {
+      "impl": "rusty_erasure",
+      "k": 6,
+      "n": 10,
+      "shard_kib": 64,
+      "verify_on_read": true
+    },
+    "placement": {
+      "strategy": "content-addressed",
+      "min_distinct_nodes": 7,
+      "repair_when_below": 8
+    }
+  },
+  "access": {
+    "layer": "L5",
+    "identity": "mid",
+    "curve": "p-256",
+    "audit_log": true,
+    "capabilities": {
+      "default_ttl_s": 3600,
+      "allow_delegation": false,
+      "spend_budget_units": 50000
+    }
+  },
+  "query": {
+    "layer": "L4",
+    "wasm": true,
+    "deterministic": true,
+    "fuel": 20000000,
+    "compute_to_data": true
+  },
+  "vector": {
+    "layer": "L4",
+    "enabled": false,
+    "dim": null,
+    "metric": "cosine",
+    "index": null
+  },
+  "meter": {
+    "layer": "L6",
+    "enabled": true,
+    "currency": "units",
+    "price_read": 1,
+    "price_write": 4
+  },
+  "engines": {
+    "media": {
+      "crate": "remade_ffmpeg_rs",
+      "enabled": true,
+      "probe_only": false,
+      "decoders": [
+        "h264",
+        "hevc",
+        "av1",
+        "av2",
+        "vp9"
+      ],
+      "encoders": [
+        "h264",
+        "av1",
+        "vp9"
+      ]
+    },
+    "asr": {
+      "crate": "mercury",
+      "enabled": true,
+      "model": null,
+      "engine": "whisper-candle",
+      "beam": 5,
+      "vad": true
+    },
+    "tts": {
+      "crate": "mercury",
+      "enabled": false,
+      "voice": null
+    },
+    "ocr": {
+      "crate": "carmenta",
+      "enabled": true,
+      "streaming": true,
+      "reading_order": true
+    },
+    "vlm": {
+      "crate": "argus",
+      "enabled": false,
+      "model": "SmolVLM-256M",
+      "max_tokens": 32
+    },
+    "detect": {
+      "crate": "diana",
+      "enabled": false,
+      "model": "yolo26n",
+      "track": true
+    },
+    "compress": {
+      "crate": "rusty_zstd",
+      "enabled": true
+    }
+  },
+  "catalog": [
+    {
+      "capability": "media.probe",
+      "status": "available",
+      "backing": "remade-ffmpeg",
+      "http": "/v1/media/probe"
+    },
+    {
+      "capability": "ocr.read",
+      "status": "available",
+      "backing": "carmenta",
+      "http": "/v1/ocr/read"
+    },
+    {
+      "capability": "asr.transcribe",
+      "status": "available",
+      "backing": "mercury",
+      "http": "/v1/asr/transcribe"
+    },
+    {
+      "capability": "vlm.caption",
+      "status": "preview",
+      "backing": "argus",
+      "http": "/v1/vlm/caption"
+    },
+    {
+      "capability": "vision.depth",
+      "status": "planned",
+      "backing": null,
+      "http": "/v1/vision/depth"
+    }
+  ],
+  "supply_chain": {
+    "tool": "deputy",
+    "stages": [
+      "discover",
+      "acquire",
+      "analyze",
+      "scan",
+      "promote",
+      "deploy"
+    ],
+    "gate": {
+      "fail_closed": true,
+      "allow_dirty": false,
+      "require_receipts": true,
+      "advisory_db_max_age_days": 7
+    },
+    "vault": {
+      "path": "F:\\mata\\deputy\\prod",
+      "sealed": true,
+      "hash": "sha-256"
+    }
+  },
+  "time": {
+    "daemon": "rtimed",
+    "sources": [
+      {
+        "host": "time.mata.example",
+        "nts": true,
+        "poll_log2": 6,
+        "prefer": true,
+        "iburst": true
+      },
+      {
+        "host": "pool.ntp.example",
+        "nts": false,
+        "poll_log2": 8,
+        "prefer": false,
+        "iburst": false
+      }
+    ],
+    "step_threshold_s": 0.128,
+    "makestep": null,
+    "serve": {
+      "enabled": false,
+      "rate_limit_qps": 4000,
+      "interleaved": true
+    }
+  },
+  "logging": {
+    "level": "info",
+    "format": "json",
+    "targets": [
+      "stdout"
+    ],
+    "redact_dids": true,
+    "sample_rate": 1.0
+  },
+  "schemas": [
+    {
+      "name": "contacts",
+      "fields": {
+        "display_name": {
+          "crdt": "register",
+          "tier": "convergent",
+          "indexed": true,
+          "required": true,
+          "default": null,
+          "max_bytes": 256
+        },
+        "bio": {
+          "crdt": "text",
+          "tier": "convergent",
+          "indexed": false,
+          "required": false,
+          "default": null,
+          "max_bytes": 4096
+        },
+        "tags": {
+          "crdt": "or_set",
+          "tier": "convergent",
+          "indexed": true,
+          "required": false,
+          "default": null,
+          "max_bytes": 512
+        },
+        "unread": {
+          "crdt": "counter",
+          "tier": "convergent",
+          "indexed": false,
+          "required": false,
+          "default": 0,
+          "max_bytes": 8
+        }
+      }
+    },
+    {
+      "name": "vault",
+      "fields": {
+        "title": {
+          "crdt": "register",
+          "tier": "causal",
+          "indexed": true,
+          "required": true,
+          "default": null,
+          "max_bytes": 256
+        },
+        "secret": {
+          "crdt": "register",
+          "tier": "strong",
+          "indexed": false,
+          "required": true,
+          "default": null,
+          "max_bytes": 8192
+        },
+        "shared_with": {
+          "crdt": "or_set",
+          "tier": "causal",
+          "indexed": false,
+          "required": false,
+          "default": null,
+          "max_bytes": 1024
+        }
+      }
+    }
+  ]
+}
