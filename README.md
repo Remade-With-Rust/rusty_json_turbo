@@ -441,10 +441,10 @@ workspace denies it outside this crate.
 ```toml
 [dependencies]
 # Drop-in: the library's crate name is `serde_json`, so this line alone swaps it.
-serde_json = { package = "rusty_json_turbo", version = "0.1" }
+serde_json = { package = "rusty_json_turbo", version = "0.2" }
 
 # or, keeping the package name in code:
-rusty_json_turbo = "0.1"      # then `use serde_json::...` as before
+rusty_json_turbo = "0.2"      # then `use serde_json::...` as before
 ```
 
 | Feature | Default | What it adds |
