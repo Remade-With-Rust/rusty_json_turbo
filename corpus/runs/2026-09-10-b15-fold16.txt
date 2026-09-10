@@ -1,0 +1,22 @@
+﻿pinvs: no_fold=F:\coding\rusty_json_turbo\target\b-knobs\release\rjson-bench.exe (1886C58E074A4E6A)
+pinvs: fold16=F:\coding\rusty_json_turbo\target\b-knobs\release\rjson-bench.exe (1886C58E074A4E6A)
+pinvs: NULL ARM -- identical binaries, this is the floor
+pinvs: cpu=2 priority=High pairs=41 bench='solo --cell twitter,dom-stringify --cell citm_catalog,dom-stringify --cell citm_catalog,struct-stringify --cell twitter,dom-parse --arm ours'
+
+| file | column | no_fold | fold16 | no_fold/fold16 time (median [min, max]) | wins, z |
+|---|---|---:|---:|---:|---:|
+| citm_catalog | dom-stringify | no_fold **1,118 MB/s** | fold16 1,042 MB/s | **0.932x** [0.877, 0.998] | 41/41, z = +6.40 |
+| citm_catalog | struct-stringify | no_fold **1,517 MB/s** | fold16 1,343 MB/s | **0.882x** [0.825, 0.924] | 41/41, z = +6.40 |
+| twitter | dom-parse | no_fold **338 MB/s** | fold16 338 MB/s | **0.990x** [0.935, 1.051] | 25/41, z = +1.41 |
+| twitter | dom-stringify | no_fold **1,980 MB/s** | fold16 1,796 MB/s | **0.913x** [0.797, 1.056] | 40/41, z = +6.09 |
+
+| file | column | no_fold best-of-N | fold16 best-of-N | no_fold/fold16 best-of-N |
+|---|---|---:|---:|---:|
+| citm_catalog | dom-stringify | 1,193 MB/s | 1,136 MB/s | **0.952x** |
+| citm_catalog | struct-stringify | 1,633 MB/s | 1,401 MB/s | **0.858x** |
+| twitter | dom-parse | 358 MB/s | 357 MB/s | **0.997x** |
+| twitter | dom-stringify | 2,159 MB/s | 1,973 MB/s | **0.914x** |
+
+method: PROCESS-level paired A/B between two binaries (a global allocator is one per program, so it cannot be an in-process arm); each binary reports its own per-cell time via json-bench solo so process launch is outside the number; leading binary alternated per pair (ABBA); pairs=41; statistic=min per-iteration time in each arm-sample window; verdict=median of paired ratios + paired wins with z, plus a best-of-N per-arm minimum that noise can only inflate; pinned=cpu2/High, affinity read back per run; work parity: output/input bytes asserted equal per cell per pair; machine=Intel64 Family 6 Model 183 Stepping 1, GenuineIntel
+A: BINARY|system|false|uncommitted|windows|x86_64
+B: BINARY|system|false|uncommitted|windows|x86_64

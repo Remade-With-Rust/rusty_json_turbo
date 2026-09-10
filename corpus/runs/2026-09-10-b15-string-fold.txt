@@ -1,0 +1,27 @@
+﻿pinvs: no_fold=F:\coding\rusty_json_turbo\target\b-knobs\release\rjson-bench.exe (5790F9E33C346D89)
+pinvs: folded=F:\coding\rusty_json_turbo\target\b-knobs\release\rjson-bench.exe (5790F9E33C346D89)
+pinvs: NULL ARM -- identical binaries, this is the floor
+pinvs: cpu=2 priority=High pairs=61 bench='solo --cell twitter,dom-stringify --cell citm_catalog,dom-stringify --cell twitter,struct-stringify --cell citm_catalog,struct-stringify --cell canada,dom-stringify --cell twitter,dom-parse --arm ours'
+
+| file | column | no_fold | folded | no_fold/folded time (median [min, max]) | wins, z |
+|---|---|---:|---:|---:|---:|
+| canada | dom-stringify | no_fold **919 MB/s** | folded 909 MB/s | **0.987x** [0.916, 1.110] | 36/61, z = +1.41 |
+| citm_catalog | dom-stringify | no_fold **1,135 MB/s** | folded 1,045 MB/s | **0.924x** [0.863, 0.974] | 61/61, z = +7.81 |
+| citm_catalog | struct-stringify | no_fold **1,535 MB/s** | folded 1,313 MB/s | **0.848x** [0.682, 0.960] | 61/61, z = +7.81 |
+| twitter | dom-parse | no_fold **338 MB/s** | folded 335 MB/s | **0.999x** [0.942, 1.068] | 33/61, z = +0.64 |
+| twitter | dom-stringify | no_fold **1,962 MB/s** | folded 1,747 MB/s | **0.895x** [0.805, 0.998] | 61/61, z = +7.81 |
+| twitter | struct-stringify | no_fold **1,920 MB/s** | folded 1,717 MB/s | **0.895x** [0.829, 0.962] | 61/61, z = +7.81 |
+
+| file | column | no_fold best-of-N | folded best-of-N | no_fold/folded best-of-N |
+|---|---|---:|---:|---:|
+| canada | dom-stringify | 1,006 MB/s | 978 MB/s | **0.973x** |
+| citm_catalog | dom-stringify | 1,184 MB/s | 1,096 MB/s | **0.926x** |
+| citm_catalog | struct-stringify | 1,634 MB/s | 1,472 MB/s | **0.901x** |
+| twitter | dom-parse | 352 MB/s | 356 MB/s | **1.011x** |
+| twitter | dom-stringify | 2,144 MB/s | 1,903 MB/s | **0.888x** |
+| twitter | struct-stringify | 2,072 MB/s | 1,842 MB/s | **0.889x** |
+pinvs: wrote corpus\runs\2026-09-10-b15-string-fold.csv
+
+method: PROCESS-level paired A/B between two binaries (a global allocator is one per program, so it cannot be an in-process arm); each binary reports its own per-cell time via json-bench solo so process launch is outside the number; leading binary alternated per pair (ABBA); pairs=61; statistic=min per-iteration time in each arm-sample window; verdict=median of paired ratios + paired wins with z, plus a best-of-N per-arm minimum that noise can only inflate; pinned=cpu2/High, affinity read back per run; work parity: output/input bytes asserted equal per cell per pair; machine=Intel64 Family 6 Model 183 Stepping 1, GenuineIntel
+A: BINARY|system|false|uncommitted|windows|x86_64
+B: BINARY|system|false|uncommitted|windows|x86_64

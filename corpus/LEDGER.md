@@ -1148,3 +1148,151 @@ the `0.9592` any `f64` field re-serialises. The value is identical; the
 trailing zero is formatting. The fixture gate now compares such numbers by
 parsed value while still treating an integer-versus-float difference as the
 fixture bug it is.
+
+### 2026-09-10 -- M2: B10 respecified by census, and B15/B5 refuted by the clock
+
+Two bricks the plan had promoted, both settled here, neither the way the plan
+expected. One was killed before it was built; the other was built, measured,
+and reverted. Together they retire the whole "reduce allocation and call
+counts" line of attack on the serializer, and redirect the DOM one.
+
+#### B10: the census refutes the brick as specified, and names the real target
+
+B10 was "build `Map` from a sorted `Vec<(String, Value)>` -- `BTreeMap` from
+sorted input is O(n) -- instead of per-entry `insert`". The premise is true and
+irrelevant, and one count says why.
+
+**Object arity, measured over the whole corpus:**
+
+| file | objects | keys | mean arity | median | <= 8 keys |
+|---|---:|---:|---:|---:|---:|
+| citm_catalog | 10,937 | 25,869 | 2.4 | **2** | **97.7%** |
+| twitter | 1,264 | 13,345 | 10.6 | 4 | 71.8% |
+| canada | 4 | 8 | 2.0 | 2 | 100% |
+| s4-sync-envelope | 3,398 | 13,182 | 3.9 | 3 | 91.7% |
+| s4-ocr-i18n | 3,367 | 17,923 | 5.3 | 4 | 98.2% |
+| s4-frame-telemetry | 2,602 | 46,816 | 18.0 | 18 | 0% |
+
+A Rust `BTreeMap` node holds **eleven** key-value pairs. At a median arity of
+2, and with 97.7% of `citm_catalog`'s objects at eight keys or fewer, **the map
+is a single node already**. A sorted-Vec bulk build would allocate a `Vec` per
+object in order to save nothing, and would lose outright on the 97.7%. Not
+built.
+
+#### Where the allocations actually are
+
+The allocation census gained a **size histogram**, because a total says
+"allocation-dominated" and nothing about which allocations, and the brick
+depends entirely on that.
+
+| cell | allocs | <= 8 B | <= 16 B | 65-128 B | 513 B - 1 K |
+|---|---:|---:|---:|---:|---:|
+| citm_catalog dom-parse | 39,339 | **54.8%** | 9.5% | 4.5% | **27.9%** |
+| twitter dom-parse | 20,834 | 30.0% | 26.7% | 4.1% | 12.4% |
+| canada dom-parse | 56,061 | 0.0% | 0.0% | **100%** | 0.0% |
+| s4-frame-telemetry dom-parse | 59,823 | **82.6%** | 0.0% | 4.3% | 13.0% |
+
+Three separate populations, and they call for three different bricks:
+
+1. **Short strings dominate the COUNT.** 54.8% of `citm_catalog`'s allocations
+   are eight bytes or less; 82.6% of `s4-frame-telemetry`'s. These are object
+   keys and short string values.
+2. **`BTreeMap` nodes dominate the BYTES.** `citm_catalog`'s 10,978 allocations
+   in the 513 B - 1 K bucket are one node per object, and at roughly 700 bytes
+   each they account for essentially all of its 7.68 MB. **A two-key object is
+   paying for an eleven-key node -- around 80% of every node is unused.**
+3. **`canada` is neither.** 100% of its allocations are one `Vec<Value>` per
+   coordinate array, 56,045 of them, with a 2.9% realloc rate. Already tight;
+   the plan's "reserve `Vec` in `visit_seq`" has almost nothing to reclaim.
+
+**Key reuse, which prices the interning idea:**
+
+| file | keys | distinct | reuse | keys <= 8 B |
+|---|---:|---:|---:|---:|
+| citm_catalog | 25,869 | **321** | **80.6x** | 83.4% |
+| twitter | 13,345 | **94** | **142.0x** | 34.1% |
+| s4-frame-telemetry | 46,816 | **33** | **1,418.7x** | 100% |
+
+`citm_catalog` allocates 25,869 `String`s for 321 distinct names.
+`s4-frame-telemetry` allocates 46,816 for **thirty-three**.
+
+So B10's real content is two changes, and **both need `Map`'s key type or
+backing store to change**, which is a v1.x item and not a byte-identical M2
+brick: intern the keys, and stop paying for an eleven-key node to hold two
+entries. The plan already carries "arena `Value`, interned keys" at v1.x; what
+this adds is the arithmetic that says how much is there.
+
+#### B15 / B5: BUILT, MEASURED, REVERTED -- and the reason retires both
+
+The counting sink said the serializer wrote **2.6 bytes per call** on
+`citm_catalog`: 189,201 sink calls for 25,869 keys, about 7.3 per key. The
+plan's own gate was "count the calls first, and do not build if it is already
+near one per token". It was not, so B15 was built: fold a short escape-free
+string's opening quote, contents and closing quote into ONE `write_all` through
+a 64-byte stack buffer.
+
+It worked, deterministically, exactly as designed:
+
+| cell | sink calls, off | on | removed | bytes/call |
+|---|---:|---:|---:|---:|
+| twitter dom-stringify | 93,564 | 59,273 | **-36.6%** | 5.0 -> 7.9 |
+| citm_catalog dom-stringify | 189,201 | 135,995 | **-28.1%** | 2.6 -> 3.7 |
+| s4-frame-telemetry struct-stringify | 298,231 | 199,391 | **-33.1%** | 2.0 -> 3.0 |
+| canada dom-stringify (control) | 334,397 | 334,373 | -0.0% | unchanged |
+
+And it was **11 to 15 percent slower**. 61 pairs, same binary, one environment
+variable, ABBA, pinned. Raw: `corpus/runs/2026-09-10-b15-string-fold.txt`.
+
+| cell | median | wins, z | best-of-N |
+|---|---:|---:|---:|
+| citm_catalog struct-stringify | **0.848x** | 61/61, z = +7.81 | 0.901x |
+| twitter dom-stringify | **0.895x** | 61/61, z = +7.81 | 0.888x |
+| twitter struct-stringify | **0.895x** | 61/61, z = +7.81 | 0.889x |
+| citm_catalog dom-stringify | **0.924x** | 61/61, z = +7.81 | 0.926x |
+| twitter dom-parse (control) | 0.999x | 33/61 | 1.011x |
+| canada dom-stringify (control) | 0.987x | 36/61 | 0.973x |
+
+**The first explanation was wrong, and finding that out is the result.** The
+obvious suspect was the 64-byte stack buffer's zeroing. So the buffer was cut
+to 16 bytes and re-measured: `twitter` dom-stringify 0.913x, `citm_catalog`
+struct-stringify 0.882x -- **the same loss**. The loss does not track the
+buffer size, so the zeroing is not the mechanism. Raw:
+`corpus/runs/2026-09-10-b15-fold16.txt`.
+
+The mechanism is that **a sink "call" here is not a call**.
+`writer.write_all(b"\"")` on a `Vec` is `extend_from_slice` with a
+COMPILE-TIME length of one: a capacity check and a single store, which inlines
+and constant-folds to a handful of instructions. Folding replaces two of those
+with a runtime-length `copy_from_slice` into a buffer plus a runtime-length
+copy out of it. That is strictly more work, and it puts `memcpy` calls into
+`ser.rs` -- **the file the emitted-asm census reported as owning exactly zero
+of them**. The census called this and the clock confirmed it from the other
+side.
+
+**So call count is the wrong metric for a sink whose calls inline.** That
+retires B15 and B5 together, since B5's claim had already been narrowed at
+M1-A and by the asm census to "call count alone" -- there are no allocations to
+remove (stringify allocates zero) and no copies to remove (`ser.rs` owns no
+`mem*`). All three of its possible claims are now measured and gone.
+
+The plan's other half of B15 -- folding the constant separators, `,` then `"`
+into `,"` and `"` then `:` into `":` -- survives the same reasoning but is
+**priced below the measurement floor and not built alone**. It would fold about
+40,000 of `citm_catalog`'s 189,201 calls, saving roughly one capacity check
+each, on the order of two or three instructions out of eight, against a cell
+that takes millions of cycles. That is well under 1%, which is where this
+project's own rule says counters decide and the clock cannot, and where the
+plan says sub-1% bricks are batched behind one switch rather than measured
+individually.
+
+#### The pattern across three refutations now
+
+B4x removed 443,936 `peek` calls at a 99.91% hit rate and was 2.5% slower.
+B15 removed 36.6% of sink calls and was 11% slower. In both cases a counter
+proved the arm did strictly less, and the clock said it took more.
+
+**A counter proves an arm did less work. Only the clock decides whether it took
+less time.** What the counters are genuinely good for is the other question --
+whether a fast path is plugged in at all, which no output gate can answer -- and
+for pricing a brick *before* it is built, which is what killed B10 for the cost
+of one histogram instead of a day's work.

@@ -46,6 +46,22 @@ carry their measured numbers and method line, never an adjective.
   and **deterministic work counters** (`rjson-bench work`, library feature
   `profile`) with an `RJT_*` A/B knob (feature `knobs`) so two implementations
   can be compared inside one binary rather than across two code layouts.
+- **Brick B15 built, measured and reverted**, and its reason retires B5 too.
+  Folding a short string's quotes and contents into one sink call removed
+  **36.6%** of `twitter`'s sink calls and was **11-15% slower** (61 pairs,
+  61/61, best-of-N agreeing, controls flat). The buffer-zeroing explanation was
+  ruled out by shrinking the buffer and getting the same loss. A 1-byte
+  `write_all` of a constant is a capacity check and a store; folding trades two
+  of those for a runtime-length copy in and out. **Call count is the wrong
+  metric for a sink whose calls inline.**
+- **Brick B10 respecified before being built**, by an allocation SIZE histogram
+  and an object-arity census. A `BTreeMap` node holds eleven pairs and the
+  median object has **two** keys, so the planned bulk build would have
+  allocated a `Vec` per object to save nothing. The real cost splits: short
+  strings dominate the allocation COUNT, `BTreeMap` nodes dominate the BYTES,
+  and key reuse runs **80x to 1,419x** -- 46,816 string allocations for 33
+  distinct names on one payload. Both fixes need `Map`'s key type or backing
+  store to change, so they move to v1.x with the arena `Value`.
 - **S4 registered in the harness**, so the house payloads are measurable and
   gated rather than merely present. `File` carries all ten documents with the
   classic trio frozen as `File::S1_S3` (a timing verb's `--all` still means

@@ -337,15 +337,16 @@ fn census(args: &[String]) -> ExitCode {
     }
     println!("allocator={} (counting)", alloc_arm::name());
     println!(
-        "{:<14} {:<18} {:>10} {:>14} {:>10} {:>10} {:>12}",
+        "{:<20} {:<18} {:>10} {:>14} {:>9} {:>9} {:>12}",
         "file", "column", "allocs", "alloc_bytes", "reallocs", "frees", "bytes"
     );
+    let mut hist: Vec<(String, [u64; alloc_arm::BUCKETS], u64)> = Vec::new();
     for (file, column) in &opts.cells {
         let input = file.load();
         let (bytes, c) = cells::census_once(*file, *column, &input);
         let c = c.unwrap_or_default();
         println!(
-            "{:<14} {:<18} {:>10} {:>14} {:>10} {:>10} {:>12}",
+            "{:<20} {:<18} {:>10} {:>14} {:>9} {:>9} {:>12}",
             file.name(),
             column.name(),
             c.allocs,
@@ -354,6 +355,35 @@ fn census(args: &[String]) -> ExitCode {
             c.frees,
             bytes
         );
+        hist.push((
+            format!("{} {}", file.name(), column.name()),
+            c.buckets,
+            c.allocs,
+        ));
+    }
+    // A total says "allocation-dominated". Only the histogram says WHICH
+    // allocations, and the brick depends entirely on that: a BTreeMap node, a
+    // short String for a key, and a doubling Vec are three different bricks.
+    println!();
+    println!("allocation SIZE histogram (counts by size bucket, and the share of all allocs)");
+    print!("{:<40}", "cell");
+    for n in alloc_arm::BUCKET_NAMES {
+        print!("{n:>9}");
+    }
+    println!();
+    for (label, buckets, total) in &hist {
+        print!("{label:<40}");
+        for b in buckets {
+            print!("{b:>9}");
+        }
+        println!();
+        if *total > 0 {
+            print!("{:<40}", "");
+            for b in buckets {
+                print!("{:>8.1}%", *b as f64 / *total as f64 * 100.0);
+            }
+            println!();
+        }
     }
     ExitCode::SUCCESS
 }

@@ -2071,6 +2071,22 @@ where
     W: ?Sized + io::Write,
     F: ?Sized + Formatter,
 {
+    // THREE CALLS, DELIBERATELY. Brick B15 folded the quotes and the contents
+    // into one `write_all` through a stack buffer, and it removed 36.6% of the
+    // sink calls on `twitter` and 28.1% on `citm_catalog` -- and ran 11 to 15
+    // PERCENT SLOWER (61 pairs, 61/61, best-of-N agreeing, controls flat).
+    //
+    // The reason is that a sink "call" here is not a call. `write_all(b"\"")`
+    // on a `Vec` is `extend_from_slice` with a COMPILE-TIME length of one: a
+    // capacity check and a single store. Folding replaces two of those with a
+    // runtime-length `copy_from_slice` into the buffer plus a runtime-length
+    // copy out of it -- strictly more work, and it puts `memcpy` calls into a
+    // file the emitted-asm census says owns zero of them.
+    //
+    // Shrinking the buffer from 64 bytes to 16 did NOT shrink the loss, which
+    // is how the buffer-zeroing explanation was ruled out and the extra copy
+    // ruled in. Call count is the wrong metric for a sink whose calls inline
+    // and constant-fold. See `corpus/LEDGER.md` under M2-B15.
     tri!(formatter.begin_string(writer));
     tri!(format_escaped_str_contents(writer, formatter, value));
     formatter.end_string(writer)

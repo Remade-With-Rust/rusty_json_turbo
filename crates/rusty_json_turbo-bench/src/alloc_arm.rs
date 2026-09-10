@@ -59,6 +59,58 @@ static ALLOC_BYTES: AtomicU64 = AtomicU64::new(0);
 static REALLOCS: AtomicU64 = AtomicU64::new(0);
 static FREES: AtomicU64 = AtomicU64::new(0);
 
+/// Allocation counts bucketed by size, power-of-two boundaries.
+///
+/// "DOM parse is allocation-dominated" was established at M1-A, but a total
+/// says nothing about WHICH allocations, and the brick you build depends
+/// entirely on the answer. A `BTreeMap` node is 200-ish bytes; a `String` for
+/// a short JSON key is 8-32; a `Vec` grown by doubling shows up as a run of
+/// increasing sizes. Those are three different bricks, and only a histogram
+/// tells them apart.
+///
+/// Buckets: 0 = 1-8 bytes, 1 = 9-16, 2 = 17-32, ... 8 = 2049-4096, 9 = larger.
+pub const BUCKETS: usize = 10;
+static BUCKET: [AtomicU64; BUCKETS] = [
+    AtomicU64::new(0),
+    AtomicU64::new(0),
+    AtomicU64::new(0),
+    AtomicU64::new(0),
+    AtomicU64::new(0),
+    AtomicU64::new(0),
+    AtomicU64::new(0),
+    AtomicU64::new(0),
+    AtomicU64::new(0),
+    AtomicU64::new(0),
+];
+
+/// Human-readable upper bound of each bucket.
+pub const BUCKET_NAMES: [&str; BUCKETS] = [
+    "<=8", "<=16", "<=32", "<=64", "<=128", "<=256", "<=512", "<=1K", "<=4K", ">4K",
+];
+
+#[inline(always)]
+fn bucket_of(size: usize) -> usize {
+    match size {
+        0..=8 => 0,
+        9..=16 => 1,
+        17..=32 => 2,
+        33..=64 => 3,
+        65..=128 => 4,
+        129..=256 => 5,
+        257..=512 => 6,
+        513..=1024 => 7,
+        1025..=4096 => 8,
+        _ => 9,
+    }
+}
+
+#[inline(always)]
+fn note(size: usize) {
+    ALLOCS.fetch_add(1, Ordering::Relaxed);
+    ALLOC_BYTES.fetch_add(size as u64, Ordering::Relaxed);
+    BUCKET[bucket_of(size)].fetch_add(1, Ordering::Relaxed);
+}
+
 /// Wraps the backend and counts what passes through it.
 pub struct Counting<A>(pub A);
 
@@ -67,8 +119,7 @@ pub struct Counting<A>(pub A);
 // counters are atomics and add no aliasing or lifetime obligations.
 unsafe impl<A: GlobalAlloc> GlobalAlloc for Counting<A> {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
-        ALLOCS.fetch_add(1, Ordering::Relaxed);
-        ALLOC_BYTES.fetch_add(layout.size() as u64, Ordering::Relaxed);
+        note(layout.size());
         // SAFETY: `layout` is forwarded exactly as the caller supplied it, so
         // the backend sees a caller-valid layout and its own contract holds.
         unsafe { self.0.alloc(layout) }
@@ -83,8 +134,7 @@ unsafe impl<A: GlobalAlloc> GlobalAlloc for Counting<A> {
     }
 
     unsafe fn alloc_zeroed(&self, layout: Layout) -> *mut u8 {
-        ALLOCS.fetch_add(1, Ordering::Relaxed);
-        ALLOC_BYTES.fetch_add(layout.size() as u64, Ordering::Relaxed);
+        note(layout.size());
         // SAFETY: as `alloc` -- the layout is passed through unchanged.
         unsafe { self.0.alloc_zeroed(layout) }
     }
@@ -108,25 +158,37 @@ pub struct Census {
     pub alloc_bytes: u64,
     pub reallocs: u64,
     pub frees: u64,
+    /// Allocation counts by size bucket; see [`BUCKET_NAMES`].
+    pub buckets: [u64; BUCKETS],
 }
 
 impl Census {
     pub fn read() -> Census {
+        let mut buckets = [0u64; BUCKETS];
+        for (slot, counter) in buckets.iter_mut().zip(BUCKET.iter()) {
+            *slot = counter.load(Ordering::Relaxed);
+        }
         Census {
             allocs: ALLOCS.load(Ordering::Relaxed),
             alloc_bytes: ALLOC_BYTES.load(Ordering::Relaxed),
             reallocs: REALLOCS.load(Ordering::Relaxed),
             frees: FREES.load(Ordering::Relaxed),
+            buckets,
         }
     }
 
     /// What happened between two readings.
     pub fn since(self, earlier: Census) -> Census {
+        let mut buckets = [0u64; BUCKETS];
+        for (i, slot) in buckets.iter_mut().enumerate() {
+            *slot = self.buckets[i] - earlier.buckets[i];
+        }
         Census {
             allocs: self.allocs - earlier.allocs,
             alloc_bytes: self.alloc_bytes - earlier.alloc_bytes,
             reallocs: self.reallocs - earlier.reallocs,
             frees: self.frees - earlier.frees,
+            buckets,
         }
     }
 }
