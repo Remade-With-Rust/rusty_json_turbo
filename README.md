@@ -577,23 +577,6 @@ had at 32 -- which lost on every cell but one. Plus there is no aarch64
 hardware here to measure on, and this project does not ship unmeasured
 optimisations. The full argument is in [`corpus/LEDGER.md`](corpus/LEDGER.md).
 
-## Roadmap
-
-- [x] **M0** -- scaffold, oracle, harness, corpus, CI, admissible baseline in the ledger (2026-09-09)
-- [ ] **M1** -- instruments, S4 house payloads, fuzz targets, ceiling probes, ranked worklist
-  <br><sub>done: allocation census, `solo`/`census` verbs, the cross-binary paired runner, seven fuzz targets, and the house-allocator experiment above</sub>
-- [ ] **M2** -- safe byte-identical bricks; core takes `forbid(unsafe_code)`
-  <br><sub>first brick landed: whitespace off the per-byte path</sub>
-- [ ] **M3** -- the `-accel` island: SSE2/AVX2 whitespace, string, escape and ASCII kernels
-- [ ] **M4** -- the serde fork earns its keep: shared identifier matcher, field-index handshake
-- [ ] **M5** -- the campaign to the G2 speed gates
-- [x] **M6** -- portability: the suite on `wasm32-wasip1`, `no_std` executed rather than checked, a per-arch census, and the browser target's bytes checksum-matched to native (2026-09-10)
-  <br><sub>NEON and simd128 twins are a written, measured note rather than code -- the corpus's 7.2-byte mean whitespace run rules out a 16-byte kernel, and there is no aarch64 hardware to measure one on. aarch64-Linux runs under qemu-user for correctness</sub>
-- [ ] **M7** -- consumer swap: rusty_time-api, mid, deputy, mata-master
-- [ ] **M8** -- use-protection-please audit, 30 days of fuzzing, v1.0
-
-Details, gates and decisions: [`docs/plans/fast_mission.md`](docs/plans/fast_mission.md).
-
 ## License
 
 Licensed under either of Apache License, Version 2.0 or MIT license at your
