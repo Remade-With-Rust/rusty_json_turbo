@@ -1,4 +1,4 @@
-### In The Wild with 21 Active Installs
+### In The Wild with 48 Active Installs
 > [RAG Converter](https://ragconverter.com) uses `rusty_json_turbo` for JSON.
 > It makes personal and work files AI-readable without them leaving the machine:
 > the whole conversion runs as WebAssembly in the browser tab, with nothing
