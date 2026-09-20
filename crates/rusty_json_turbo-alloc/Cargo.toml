@@ -19,7 +19,7 @@ description = "The rusty_alloc seam for rusty_json_turbo deliverables: install t
 # Pinned exactly. This crate exists so that this pin, the profile choice and
 # the `secure` decision live in ONE place instead of being re-made in every
 # binary -- and so no feature code ever names `rusty_alloc-api` directly.
-rusty_alloc-api = { version = "=2.0.4" }
+rusty_alloc-api = { version = "=2.2.0" }
 
 [features]
 # Forwarded, never re-spelled: `secure` turns on guard pages and encrypted free
