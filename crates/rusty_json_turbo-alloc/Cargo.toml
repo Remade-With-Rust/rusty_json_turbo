@@ -25,7 +25,7 @@ description = "The rusty_alloc seam for rusty_json_turbo deliverables: install t
 # pinning. An `=` pin additionally blocks patch releases from ever reaching a
 # consumer, which is the wrong default for an ALLOCATOR -- the crate where old
 # versions have historically been a soundness matter, not a feature one.
-rusty_alloc-api = { version = "2.2" }
+rusty_alloc-api = { version = "=2.2.5" }
 
 [features]
 # Forwarded, never re-spelled: `secure` turns on guard pages and encrypted free
