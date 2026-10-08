@@ -36,15 +36,28 @@ pub const BACKEND: Backend = alloc_seam::Alloc;
 #[cfg(not(feature = "rusty-alloc"))]
 pub const BACKEND: Backend = std::alloc::System;
 
-/// The name that goes in the method line.
-pub const fn name() -> &'static str {
+/// The name that goes in the method line, version included.
+///
+/// Not a `const fn` any more, and not a constant: the allocator's version is
+/// joined here because the seam is `no_std` and cannot concatenate a
+/// non-literal without pulling in another crate. The version itself still
+/// comes from the allocator's own `VERSION`, so this string cannot name a
+/// build other than the one that is linked -- which matters because it is
+/// printed beside every number this harness reports.
+#[must_use]
+pub fn name() -> String {
     #[cfg(feature = "rusty-alloc")]
     {
-        alloc_seam::NAME
+        format!(
+            "{} {}{}",
+            alloc_seam::NAME,
+            alloc_seam::VERSION,
+            alloc_seam::PROFILE
+        )
     }
     #[cfg(not(feature = "rusty-alloc"))]
     {
-        "system"
+        "system".to_owned()
     }
 }
 

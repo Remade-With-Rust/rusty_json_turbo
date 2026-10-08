@@ -58,18 +58,29 @@ bytes** on a real document. Measured on the project's corpus — pinned to one
 core, paired, ABBA-interleaved, against the platform allocator, with the
 allocation counts proven identical on both sides:
 
-| workload | allocations per parse | platform | rusty_alloc | ratio |
+| workload | allocations per parse | platform | rusty_alloc 2.2.5 | ratio |
 |---|---:|---:|---:|---:|
-| `twitter.json`, DOM parse | 20,834 | 459 MB/s | **690 MB/s** | **1.53x** |
-| `citm_catalog.json`, DOM parse | 39,339 | 697 MB/s | **1013 MB/s** | **1.46x** |
-| `canada.json`, DOM parse | 56,061 | 376 MB/s | **499 MB/s** | **1.32x** |
-| `twitter.json`, struct parse | 2,762 | 880 MB/s | **1024 MB/s** | **1.17x** |
-| `canada.json`, struct parse | 485 | 723 MB/s | 768 MB/s | 1.07x |
-| any file, stringify | **0** | 1545 MB/s | 1476 MB/s | 1.00x |
+| `twitter.json`, DOM parse | 20,834 | 362 MB/s | **567 MB/s** | **1.652x** |
+| `citm_catalog.json`, DOM parse | 39,339 | 561 MB/s | **888 MB/s** | **1.570x** |
+| `canada.json`, DOM parse | 56,061 | 290 MB/s | **386 MB/s** | **1.466x** |
+| `citm_catalog.json`, struct parse | 2,544 | 1,369 MB/s | **1,589 MB/s** | **1.149x** |
+| `twitter.json`, struct parse | 2,762 | 734 MB/s | **834 MB/s** | **1.121x** |
+| `twitter.json`, stringify (control) | **0** | 1,699 MB/s | 1,613 MB/s | **0.949x** |
 
-<sub>**The last row is the control, and it is why the rest is believable.** A
-stringify into a pre-sized buffer allocates *zero* times, so the allocator
-cannot touch it — and it doesn't. The effect sorts with the allocation count.
+<sub>**Re-measured on rusty_alloc 2.2.5** (2026-10-08, 15 pairs, pinned, ABBA,
+2-second windows, allocation counts proven identical on both sides). Every
+parse cell is unanimous at 0/15 or 1/15 wins for the platform allocator,
+z = -3.36 to -3.87.
+
+**The control row no longer reads 1.00, and that is the first thing to read.**
+A stringify into a pre-sized buffer allocates *zero* times, so an allocator
+cannot help it — on 2.0.4 that row measured exactly 1.00x. On 2.2.5 it measures
+**0.949x**: the allocator build is ~5% slower on work that does not allocate.
+Either the two binaries differ in layout, or 2.2.5 carries a fixed cost that
+reaches non-allocating paths; one A/B cannot separate them. So the parse gains
+are if anything understated by that 5%, and a workload that allocates nothing
+should not expect a win. The effect still sorts with the allocation count.
+
 Numbers are Windows x86-64, where Rust's platform allocator is `HeapAlloc`;
 glibc's malloc has tcache and fastbins and should close much of the gap, so the
 Linux figure is unmeasured rather than implied. Full tables, method line and

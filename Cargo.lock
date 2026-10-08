@@ -419,9 +419,9 @@ checksum = "cf54715a573b99ac80df0bc206da022bcd442c974952c7b9720069370852e21f"
 
 [[package]]
 name = "rusty_alloc"
-version = "2.0.4"
+version = "2.2.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "45e9f7d532888487c4352f949950fb42ce67dd19cd04598689bc08144267c188"
+checksum = "c12ed1752127ac2fabc5bc5aed934055f4be5f093885d830a66686bff4cd7668"
 dependencies = [
  "libc",
  "portable-atomic",
@@ -430,16 +430,16 @@ dependencies = [
 
 [[package]]
 name = "rusty_alloc-api"
-version = "2.0.4"
+version = "2.2.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c8c02943e4b13422460fa337aaefb0e0a49e21b4b9a9a310cce7480c2a5eddef"
+checksum = "a68d299fc4818e1b26164556504f28240de294ea709c519ec465add9238f30f7"
 dependencies = [
  "rusty_alloc",
 ]
 
 [[package]]
 name = "rusty_json_turbo"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "automod",
  "indexmap",
@@ -460,18 +460,18 @@ dependencies = [
 
 [[package]]
 name = "rusty_json_turbo-accel"
-version = "0.2.0"
+version = "0.3.0"
 
 [[package]]
 name = "rusty_json_turbo-alloc"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "rusty_alloc-api",
 ]
 
 [[package]]
 name = "rusty_json_turbo-bench"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "rusty_json_turbo",
  "rusty_json_turbo-alloc",
@@ -483,7 +483,7 @@ dependencies = [
 
 [[package]]
 name = "rusty_json_turbo-cli"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "rusty_json_turbo",
  "rusty_json_turbo-alloc",
@@ -492,7 +492,7 @@ dependencies = [
 
 [[package]]
 name = "rusty_json_turbo-wasmdemo"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "rusty_json_turbo",
 ]

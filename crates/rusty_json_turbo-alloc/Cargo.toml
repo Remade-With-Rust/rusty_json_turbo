@@ -13,13 +13,19 @@ readme = "README.md"
 documentation = "https://docs.rs/rusty_json_turbo-alloc"
 categories = ["memory-management", "no-std"]
 keywords = ["allocator", "rusty-alloc", "json", "performance"]
-description = "The rusty_alloc seam for rusty_json_turbo deliverables: install the house allocator in one line, from the binary, where a global allocator belongs. On a JSON DOM parse that alone measured 1.46-1.53x. forbid(unsafe). MIT OR Apache-2.0."
+description = "The rusty_alloc seam for rusty_json_turbo deliverables: install the house allocator in one line, from the binary, where a global allocator belongs. On a JSON DOM parse that alone measured 1.47-1.65x (rusty_alloc 2.2.5). forbid(unsafe). MIT OR Apache-2.0."
 
 [dependencies]
-# Pinned exactly. This crate exists so that this pin, the profile choice and
-# the `secure` decision live in ONE place instead of being re-made in every
-# binary -- and so no feature code ever names `rusty_alloc-api` directly.
-rusty_alloc-api = { version = "=2.0.4" }
+# This crate exists so that this choice, the profile and the `secure` decision
+# live in ONE place instead of being re-made in every binary -- and so no
+# feature code ever names `rusty_alloc-api` directly.
+#
+# A CARET, not an `=` pin. The seam's value is that the decision is made once,
+# and a caret satisfies that just as well while `Cargo.lock` does the actual
+# pinning. An `=` pin additionally blocks patch releases from ever reaching a
+# consumer, which is the wrong default for an ALLOCATOR -- the crate where old
+# versions have historically been a soundness matter, not a feature one.
+rusty_alloc-api = { version = "2.2" }
 
 [features]
 # Forwarded, never re-spelled: `secure` turns on guard pages and encrypted free

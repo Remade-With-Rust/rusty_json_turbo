@@ -31,13 +31,24 @@
 //!
 //! | workload | allocations per parse | ratio |
 //! |---|---:|---:|
-//! | twitter.json, DOM parse | 20,834 | **1.53x** |
-//! | citm_catalog.json, DOM parse | 39,339 | **1.46x** |
-//! | canada.json, struct parse | 485 | 1.07x |
-//! | any file, stringify | **0** | 1.00x (the control) |
+//! | twitter.json, DOM parse | 20,834 | **1.652x** |
+//! | citm_catalog.json, DOM parse | 39,339 | **1.570x** |
+//! | canada.json, DOM parse | 56,061 | **1.466x** |
+//! | citm_catalog.json, struct parse | 2,544 | 1.149x |
+//! | twitter.json, stringify | **0** | **0.949x** (the control) |
 //!
-//! The last row is why the others are believable: a stringify into a pre-sized
-//! buffer allocates nothing, so the allocator cannot touch it -- and it doesn't.
+//! Re-measured on **rusty_alloc 2.2.5**, 15 pairs, 2-second windows; every
+//! parse cell unanimous at 0/15 or 1/15 wins for the platform allocator.
+//!
+//! **The control row is the first thing to read, and it no longer reads 1.00.**
+//! A stringify into a pre-sized buffer allocates nothing, so the allocator
+//! cannot touch it -- on 2.0.4 that row measured exactly 1.00x, and on 2.2.5 it
+//! measures 0.949x: the allocator build is ~5% slower on work that does not
+//! allocate. Either the two binaries differ in layout or 2.2.5 carries a fixed
+//! cost reaching non-allocating paths, and one A/B cannot separate them. The
+//! parse gains are therefore if anything understated, and a workload that
+//! allocates nothing should not expect a win.
+//!
 //! Full tables, method line and caveats: `corpus/LEDGER.md` in the repository.
 //! The numbers are Windows x86-64; glibc's malloc should close much of the gap,
 //! so treat the Linux figure as unmeasured rather than implied.
@@ -45,7 +56,7 @@
 //! # Hardened profile
 //!
 //! ```toml
-//! rusty_json_turbo-alloc = { version = "0.1", features = ["secure"] }
+//! rusty_json_turbo-alloc = { version = "0.3", features = ["secure"] }
 //! ```
 //!
 //! Guard pages and encrypted free lists, for a service eating untrusted bytes.
@@ -67,10 +78,35 @@ pub use rusty_alloc_api::RustyAlloc as Alloc;
 /// A measurement that does not name its allocator is not reproducible: the
 /// allocator is a link-time property of the binary, so it cannot be read back
 /// at runtime from anywhere else.
-pub const NAME: &str = if cfg!(feature = "secure") {
-    "rusty_alloc 2.0.4 (secure)"
+/// The allocator's own version, re-exported.
+///
+/// DERIVED, never transcribed: `rusty_alloc` defines it as
+/// `env!("CARGO_PKG_VERSION")`, so it cannot disagree with the allocator that
+/// is actually linked.
+///
+/// This used to be a literal baked into [`NAME`] (`"rusty_alloc 2.0.4"`), and
+/// that is a worse defect than it looks: the benchmark harness prints the
+/// allocator on the METHOD LINE of every number it reports, so after the
+/// 2.2.5 upgrade every measurement in the ledger would have named 2.0.4 while
+/// running 2.2.5. **A version in a string is a claim about the build, and only
+/// the build may make it.**
+///
+/// The pieces are separate rather than one concatenated constant because this
+/// crate is `no_std` and has exactly one dependency; const string
+/// concatenation of a non-literal needs either `alloc` or another crate, and
+/// neither is worth adding to a published crate for a display string. The
+/// caller joins them -- see `NAME`, `PROFILE`.
+pub use rusty_alloc_api::VERSION;
+
+/// Which profile is compiled in: `""`, `" (secure)"` or `" (debug_checks)"`.
+pub const PROFILE: &str = if cfg!(feature = "secure") {
+    " (secure)"
 } else if cfg!(feature = "debug_checks") {
-    "rusty_alloc 2.0.4 (debug_checks)"
+    " (debug_checks)"
 } else {
-    "rusty_alloc 2.0.4"
+    ""
 };
+
+/// The allocator's name, without the version. Join with [`VERSION`] and
+/// [`PROFILE`] for the full identification a method line wants.
+pub const NAME: &str = "rusty_alloc";

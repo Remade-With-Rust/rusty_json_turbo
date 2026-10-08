@@ -3497,3 +3497,111 @@ What today actually established, stated at the strength each piece earned:
 `crates/rusty_json_turbo-bench/tests/b11_price.rs` prices all three separately
 against a control that is the probe's own code in `Value`'s shape, so the
 probe's overhead cancels and each lever is measured alone.
+
+### 2026-10-08 -- rusty_alloc 2.0.4 -> 2.2.5, and the control row stopped reading 1.00
+
+A dependency bump, which turned up a provenance defect and then a measurement
+finding. Neither was the point of the upgrade.
+
+#### The defect: a version transcribed into a string the method line prints
+
+`rusty_json_turbo-alloc` carried this:
+
+```rust
+pub const NAME: &str = "rusty_alloc 2.0.4";
+```
+
+and `rjson-bench` prints it as `allocator=` **on the method line of every
+number this project reports**. Bumping the dependency alone would have had the
+ledger, the README and every future table name 2.0.4 while running 2.2.5 --
+not a wrong measurement, but a wrong account of which build produced it, which
+is the same thing one step removed.
+
+It now derives: `rusty_alloc` defines `VERSION = env!("CARGO_PKG_VERSION")` and
+re-exports it through `rusty_alloc-api`, so the string cannot disagree with the
+allocator that is linked. The seam is `no_std` with one dependency and MSRV
+1.85 has no const concatenation for a non-literal, so the pieces (`NAME`,
+`VERSION`, `PROFILE`) are exposed separately and joined in the harness -- a new
+crate for a display string is not a trade worth making in a published package.
+
+**The law, which this project keeps relearning in new costumes: a version in a
+string is a claim about the build, and only the build may make it.** The same
+shape cost five crates in the house skill their reachable versions a month ago.
+
+The `=2.0.4` pin became a caret `"2.2"` at the same time. The seam exists so
+the choice is made in ONE place, and a caret satisfies that while `Cargo.lock`
+does the pinning; an `=` pin additionally blocks patch releases from ever
+reaching a consumer, which is the wrong default for an allocator -- the crate
+where old versions have historically been a soundness matter.
+
+#### The re-measurement, and the window that nearly published a fiction
+
+The README's allocator table was measured on 2.0.4 and named no version, so it
+had to be re-taken rather than relabelled. First attempt, 250 ms windows:
+
+| cell | ratio |
+|---|---:|
+| citm_catalog dom-parse | 2.436x |
+| twitter dom-parse | 2.027x |
+
+Those are wrong, and the README said so before I did. Its own footnote read:
+*"at 250 ms samples twitter DOM parse reads 2.0x rather than 1.53x, so about a
+quarter of the short-window figure is per-process"*. My twitter row came out at
+**2.027x** -- the documented short-window inflation, reproduced to two decimal
+places. The table being replaced had used 2-second windows for exactly this
+reason.
+
+**A harness that documents its own failure mode is only useful if you read the
+footnote before you quote the number.** Re-run at 2 s, 15 pairs, pinned, ABBA:
+
+| workload | allocs/parse | platform | rusty_alloc 2.2.5 | median | best-of-N | wins, z |
+|---|---:|---:|---:|---:|---:|---:|
+| twitter, DOM parse | 20,834 | 362 MB/s | **567 MB/s** | **1.652x** | 1.545x | 0/15, -3.87 |
+| citm_catalog, DOM parse | 39,339 | 561 MB/s | **888 MB/s** | **1.570x** | 1.554x | 0/15, -3.87 |
+| canada, DOM parse | 56,061 | 290 MB/s | **386 MB/s** | **1.466x** | 1.348x | 0/15, -3.87 |
+| citm_catalog, struct parse | 2,544 | 1,369 MB/s | **1,589 MB/s** | 1.149x | 1.190x | 0/15, -3.87 |
+| twitter, struct parse | 2,762 | 734 MB/s | **834 MB/s** | 1.121x | 1.190x | 1/15, -3.36 |
+| **twitter, stringify (CONTROL)** | **0** | 1,699 MB/s | 1,613 MB/s | **0.949x** | 0.955x | 14/15, **+3.36** |
+
+Against 2.0.4's figures the parses improved: 1.53x -> 1.652x on twitter,
+1.46x -> 1.570x on citm, 1.32x -> 1.466x on canada.
+
+#### THE FINDING: the control moved, and it is the row that carried the claim
+
+On 2.0.4 the stringify row measured **exactly 1.00x**, and the old README said
+in as many words that *"the last row is the control, and it is why the others
+are believable"*. A stringify into a pre-sized buffer allocates **zero** times,
+so an allocator cannot reach it.
+
+On 2.2.5 that row reads **0.949x median, 0.955x best-of-N, 14/15 wins for the
+platform allocator, z = +3.36.** Both statistics agree, and the sign is
+unambiguous: **the allocator build is about 5% slower on work that does not
+allocate.**
+
+Two causes fit and a single A/B cannot separate them:
+
+1. **Layout.** These are two binaries, and this project has measured
+   instantiation bias at up to 19% per cell on byte-identical source. 5% is
+   well inside that.
+2. **A fixed cost in 2.2.5** that reaches even non-allocating paths -- the
+   allocator arm's binary is 6.87 MB against the system arm's 6.47 MB.
+
+What follows either way, and is now written into both READMEs and the crate
+docs: the parse gains above are **if anything understated** by that 5%, and a
+workload that allocates nothing **should not expect a win**. The claim still
+rests on the shape that survives both explanations -- the effect sorts cleanly
+with the allocation count, from 56,061 allocations at 1.466x down to zero at
+0.949x.
+
+**A control that stops reading 1.00 does not invalidate a table; it re-prices
+it.** The temptation is to drop the row, because it is the only unflattering
+number in the set and it is the one nobody would have asked for. It is also
+the only row that tells a reader what the comparison's floor is.
+
+#### Separating the two causes, when it is worth doing
+
+The cheap decisive test is a null arm on this exact pair: build the SAME
+feature set twice and A/B the two binaries against each other. Whatever the
+stringify row then reads is pure layout, and the residual is 2.2.5's. That is
+one build and one 15-pair run, and it is not done here -- recorded so the next
+person does not have to rediscover the question.

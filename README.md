@@ -116,28 +116,41 @@ to your binary and declare it. That is the whole diff: **not one line of JSON
 code touched.** Pinned to one core, paired, ABBA-interleaved, allocation counts
 proven identical on both sides. `> 1` means the house allocator is faster.
 
-| workload | allocations per parse | platform | rusty_alloc | ratio | window |
-|---|---:|---:|---:|---:|:--:|
-| twitter, DOM parse | 20,834 | 459 MB/s | **690 MB/s** | **1.53x** | 2 s |
-| citm_catalog, DOM parse | 39,339 | 697 MB/s | **1013 MB/s** | **1.46x** | 2 s |
-| canada, DOM parse | 56,061 | 376 MB/s | **499 MB/s** | **1.32x** | 250 ms |
-| twitter, struct parse | 2,762 | 880 MB/s | **1024 MB/s** | **1.17x** | 250 ms |
-| citm_catalog, struct parse | 2,544 | 1326 MB/s | **1465 MB/s** | **1.12x** | 250 ms |
-| canada, struct parse | 485 | 723 MB/s | 768 MB/s | 1.07x | 2 s |
-| any file, stringify | **0** | 1545 MB/s | 1476 MB/s | 1.00x | 2 s |
+| workload | allocations per parse | platform | rusty_alloc 2.2.5 | ratio |
+|---|---:|---:|---:|---:|
+| twitter, DOM parse | 20,834 | 362 MB/s | **567 MB/s** | **1.652x** |
+| citm_catalog, DOM parse | 39,339 | 561 MB/s | **888 MB/s** | **1.570x** |
+| canada, DOM parse | 56,061 | 290 MB/s | **386 MB/s** | **1.466x** |
+| citm_catalog, struct parse | 2,544 | 1,369 MB/s | **1,589 MB/s** | **1.149x** |
+| twitter, struct parse | 2,762 | 734 MB/s | **834 MB/s** | **1.121x** |
+| twitter, stringify (control) | **0** | 1,699 MB/s | 1,613 MB/s | **0.949x** |
 
-<sub>**The last row is the control, and it is why the others are believable.**
-A stringify into a pre-sized buffer allocates *zero* times, so the allocator
-cannot touch it — and it doesn't. The effect sorts with the allocation count,
-which a deterministic census proves is identical under both allocators. The
-`window` column matters: at 250 ms samples twitter DOM parse reads 2.0x rather
-than 1.53x, so about a quarter of the short-window figure is per-process
-warm-up and the longer, smaller number is the honest one; the 250 ms rows are
-therefore upper bounds on their own effect. `canada, struct parse` at 1.07x is
-inside the cross-binary layout band (0.976–1.070x, measured on the
-zero-allocation cells) and so is **not** claimable as an allocator result.
-The full oracle passes under `rusty_alloc` and under its hardened `secure`
-profile: **no output byte changes**, and `secure` keeps nearly the whole win.</sub>
+<sub>**Re-measured on rusty_alloc 2.2.5** (2026-10-08, 15 pairs, pinned to one
+core, ABBA, 2-second windows, allocation counts proven identical on both sides;
+raw run in `corpus/runs/`). Every parse cell is unanimous at 0/15 or 1/15 wins
+for the platform allocator, z = -3.36 to -3.87.
+
+**Read the control row first, because it no longer reads 1.00.** A stringify
+into a pre-sized buffer allocates *zero* times, so an allocator cannot help it
+— and on 2.0.4 that row measured exactly 1.00x, which is what made the rest of
+the table believable. On 2.2.5 it measures **0.949x** (0.955x best-of-N, 14/15
+wins, z = +3.36): the allocator build is about 5% SLOWER on work that does not
+allocate. Two causes fit and one A/B cannot separate them — the two binaries
+differ in layout (measured elsewhere in this project at up to 19% per cell), or
+2.2.5 carries a fixed cost that reaches even non-allocating paths. So: the
+parse gains above are if anything **understated** by that 5%, and a workload
+that allocates nothing should not expect a win. The effect still sorts cleanly
+with the allocation count, which is the shape the claim rests on.
+
+**Window length matters and the first attempt at this table got it wrong.** At
+250 ms samples the same comparison reads 2.03x on twitter DOM parse rather than
+1.65x — about a fifth of the short-window figure is per-process warmup, not
+allocator. These are 2-second windows.
+
+Numbers are Windows x86-64, where Rust's platform allocator is `HeapAlloc`;
+glibc's malloc has tcache and fastbins and should close much of the gap, so the
+Linux figure is unmeasured rather than implied. Full tables and method line:
+[`corpus/LEDGER.md`](corpus/LEDGER.md).</sub>
 
 <sub>**Two things Table 1 is not.** It is **not** a win of this crate over
 serde_json: at this milestone the JSON code is upstream's, so upstream linked
@@ -441,10 +454,10 @@ workspace denies it outside this crate.
 ```toml
 [dependencies]
 # Drop-in: the library's crate name is `serde_json`, so this line alone swaps it.
-serde_json = { package = "rusty_json_turbo", version = "0.2" }
+serde_json = { package = "rusty_json_turbo", version = "0.3" }
 
 # or, keeping the package name in code:
-rusty_json_turbo = "0.2"      # then `use serde_json::...` as before
+rusty_json_turbo = "0.3"      # then `use serde_json::...` as before
 ```
 
 | Feature | Default | What it adds |

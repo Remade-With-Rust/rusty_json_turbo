@@ -1,0 +1,25 @@
+﻿pinvs: system=C:\Users\talmo\AppData\Local\Temp\claude\f--coding-rusty-json-turbo\a8abdee6-de75-4d8f-8adf-8bfa723cf8fc\scratchpad\allocarms\system.exe (001E6FB919D88699)
+pinvs: rusty_alloc-2.2.5=C:\Users\talmo\AppData\Local\Temp\claude\f--coding-rusty-json-turbo\a8abdee6-de75-4d8f-8adf-8bfa723cf8fc\scratchpad\allocarms\rustyalloc.exe (F1EC062CA3E6C2E5)
+pinvs: cpu=2 priority=High pairs=15 bench='solo --arm ours --window-ms 250 --cell twitter,dom-parse --cell citm_catalog,dom-parse --cell canada,dom-parse --cell twitter,struct-parse --cell citm_catalog,struct-parse --cell twitter,dom-stringify'
+
+| file | column | system | rusty_alloc-2.2.5 | system/rusty_alloc-2.2.5 time (median [min, max]) | wins, z |
+|---|---|---:|---:|---:|---:|
+| canada | dom-parse | system **264 MB/s** | rusty_alloc-2.2.5 439 MB/s | **1.661x** [1.181, 1.819] | 0/15, z = -3.87 |
+| citm_catalog | dom-parse | system **401 MB/s** | rusty_alloc-2.2.5 972 MB/s | **2.436x** [2.185, 2.531] | 0/15, z = -3.87 |
+| citm_catalog | struct-parse | system **1,482 MB/s** | rusty_alloc-2.2.5 1,715 MB/s | **1.159x** [1.114, 2.132] | 0/15, z = -3.87 |
+| twitter | dom-parse | system **319 MB/s** | rusty_alloc-2.2.5 644 MB/s | **2.027x** [1.692, 2.195] | 0/15, z = -3.87 |
+| twitter | dom-stringify | system **1,819 MB/s** | rusty_alloc-2.2.5 1,755 MB/s | **0.969x** [0.870, 1.435] | 13/15, z = +2.84 |
+| twitter | struct-parse | system **780 MB/s** | rusty_alloc-2.2.5 893 MB/s | **1.171x** [0.832, 1.601] | 1/15, z = -3.36 |
+
+| file | column | system best-of-N | rusty_alloc-2.2.5 best-of-N | system/rusty_alloc-2.2.5 best-of-N |
+|---|---|---:|---:|---:|
+| canada | dom-parse | 292 MB/s | 457 MB/s | **1.562x** |
+| citm_catalog | dom-parse | 443 MB/s | 1,015 MB/s | **2.290x** |
+| citm_catalog | struct-parse | 1,553 MB/s | 1,789 MB/s | **1.152x** |
+| twitter | dom-parse | 348 MB/s | 716 MB/s | **2.059x** |
+| twitter | dom-stringify | 1,929 MB/s | 1,829 MB/s | **0.948x** |
+| twitter | struct-parse | 787 MB/s | 945 MB/s | **1.202x** |
+
+method: PROCESS-level paired A/B between two binaries (a global allocator is one per program, so it cannot be an in-process arm); each binary reports its own per-cell time via json-bench solo so process launch is outside the number; leading binary alternated per pair (ABBA); pairs=15; statistic=min per-iteration time in each arm-sample window; verdict=median of paired ratios + paired wins with z, plus a best-of-N per-arm minimum that noise can only inflate; pinned=cpu2/High, affinity read back per run; work parity: output/input bytes asserted equal per cell per pair; machine=Intel64 Family 6 Model 183 Stepping 1, GenuineIntel
+A: BINARY|system|false|uncommitted|windows|x86_64
+B: BINARY|rusty_alloc 2.2.5|false|uncommitted|windows|x86_64
