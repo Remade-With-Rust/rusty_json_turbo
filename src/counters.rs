@@ -18,66 +18,106 @@
 
 #![allow(dead_code)]
 
-use core::sync::atomic::{AtomicU64, Ordering};
+use core::sync::atomic::Ordering;
+
+/// The counter's width, chosen by what the target can actually do.
+///
+/// `AtomicU64` does not exist on a 32-bit target without 64-bit atomics --
+/// riscv32imac and riscv32imafc are two -- and this module is declared
+/// unconditionally, so importing it there failed the build outright
+/// (`unresolved import core::sync::atomic::AtomicU64`). It broke every
+/// no_std consumer of this crate on those chips.
+///
+/// Nothing is lost by narrowing: `add` only increments under `profile`,
+/// which pulls in `std`, so on a no_std target these are never written at
+/// all -- they only have to EXIST. Where 64-bit atomics are available the
+/// width is unchanged.
+#[cfg(target_has_atomic = "64")]
+pub type Counter = core::sync::atomic::AtomicU64;
+#[cfg(target_has_atomic = "64")]
+type Width = u64;
+/// A counter, 32 bits wide because the target has no 64-bit atomics.
+#[cfg(not(target_has_atomic = "64"))]
+pub type Counter = core::sync::atomic::AtomicU32;
+#[cfg(not(target_has_atomic = "64"))]
+type Width = u32;
+
+/// One counter's value, as the reported 64-bit type.
+///
+/// Split per width so that neither arm converts a type to itself: clippy's
+/// `useless_conversion` and `unnecessary_cast` each object to one of the
+/// single-expression spellings.
+#[cfg(target_has_atomic = "64")]
+#[inline]
+fn get(counter: &Counter) -> u64 {
+    counter.load(Ordering::Relaxed)
+}
+
+/// One counter's value, widened from the narrow counter this target uses.
+#[cfg(not(target_has_atomic = "64"))]
+#[inline]
+fn get(counter: &Counter) -> u64 {
+    u64::from(counter.load(Ordering::Relaxed))
+}
 
 /// Calls to `Read::peek`.
-pub static PEEK: AtomicU64 = AtomicU64::new(0);
+pub static PEEK: Counter = Counter::new(0);
 /// Calls to `Read::next`.
-pub static NEXT: AtomicU64 = AtomicU64::new(0);
+pub static NEXT: Counter = Counter::new(0);
 /// Calls to `Read::discard`.
-pub static DISCARD: AtomicU64 = AtomicU64::new(0);
+pub static DISCARD: Counter = Counter::new(0);
 /// Calls to `Read::skip_whitespace` -- whitespace runs considered.
-pub static WS_RUNS: AtomicU64 = AtomicU64::new(0);
+pub static WS_RUNS: Counter = Counter::new(0);
 /// Insignificant whitespace bytes skipped.
-pub static WS_BYTES: AtomicU64 = AtomicU64::new(0);
+pub static WS_BYTES: Counter = Counter::new(0);
 /// Calls to `Read::take_8_digits`.
-pub static D8_CALLS: AtomicU64 = AtomicU64::new(0);
+pub static D8_CALLS: Counter = Counter::new(0);
 /// Calls to `Read::take_8_digits` that consumed eight digits.
-pub static D8_HITS: AtomicU64 = AtomicU64::new(0);
+pub static D8_HITS: Counter = Counter::new(0);
 /// Calls to `SliceRead::skip_to_escape` -- string runs considered (brick B2).
-pub static STR_SCANS: AtomicU64 = AtomicU64::new(0);
+pub static STR_SCANS: Counter = Counter::new(0);
 /// String content bytes advanced over by the escape scanner (brick B2).
-pub static STR_BYTES: AtomicU64 = AtomicU64::new(0);
+pub static STR_BYTES: Counter = Counter::new(0);
 /// Strings that had to be copied into scratch because they held an escape, so
 /// the zero-copy borrow was lost (brick B2: this is the cost worth removing).
-pub static STR_COPIES: AtomicU64 = AtomicU64::new(0);
+pub static STR_COPIES: Counter = Counter::new(0);
 /// Strings returned as a borrow of the input, the fast path (brick B2).
-pub static STR_BORROWS: AtomicU64 = AtomicU64::new(0);
+pub static STR_BORROWS: Counter = Counter::new(0);
 /// String content bytes examined by the serializer's escape loop (brick B3).
-pub static ESC_BYTES: AtomicU64 = AtomicU64::new(0);
+pub static ESC_BYTES: Counter = Counter::new(0);
 /// Bytes that actually needed a JSON escape (brick B3). The ratio of this to
 /// `ESC_BYTES` is what a per-chunk mask would be skipping over.
-pub static ESC_HITS: AtomicU64 = AtomicU64::new(0);
+pub static ESC_HITS: Counter = Counter::new(0);
 /// `write_string_fragment` calls: clean runs handed to the writer (brick B3).
-pub static ESC_FRAGS: AtomicU64 = AtomicU64::new(0);
+pub static ESC_FRAGS: Counter = Counter::new(0);
 /// Steps taken by the escape scanner: one per 8-byte chunk on the wide path,
 /// one per byte on the scalar path (brick B3). This is the counter that says
 /// whether the wide path is ENGAGED -- a byte-identical output gate cannot,
 /// because a fast path that silently stopped being taken still produces the
 /// right answer. Expect roughly `esc_bytes / 8` wide and `esc_bytes` scalar.
-pub static ESC_STEPS: AtomicU64 = AtomicU64::new(0);
+pub static ESC_STEPS: Counter = Counter::new(0);
 /// Object keys parsed (brick B6). One per key, whatever the visitor does next.
-pub static KEYS: AtomicU64 = AtomicU64::new(0);
+pub static KEYS: Counter = Counter::new(0);
 /// `RawValue` captures completed on a reader (brick B13).
-pub static RAW_CAPTURES: AtomicU64 = AtomicU64::new(0);
+pub static RAW_CAPTURES: Counter = Counter::new(0);
 /// Bytes of `RawValue` text captured on a reader (brick B13). Upstream pushed
 /// one byte at a time and this is how many; B13 takes the same total in
 /// `RAW_CAPTURES` copies, so the ratio of the two is the brick's whole effect.
-pub static RAW_BYTES: AtomicU64 = AtomicU64::new(0);
+pub static RAW_BYTES: Counter = Counter::new(0);
 /// Times the window had to GROW because a captured value was longer than it
 /// (brick B13). Zero on any stream of ordinary documents; non-zero is the only
 /// case where B13 costs memory that upstream did not spend.
-pub static RAW_GROWS: AtomicU64 = AtomicU64::new(0);
+pub static RAW_GROWS: Counter = Counter::new(0);
 /// Times a grown window was handed back at the end of a capture (brick B13).
 /// This is the counter that says the growth is not permanent -- there is no
 /// output difference to gate it with.
-pub static RAW_SHRINKS: AtomicU64 = AtomicU64::new(0);
+pub static RAW_SHRINKS: Counter = Counter::new(0);
 /// Bytes handed to `str::from_utf8` for validation (brick B12). `from_str`
 /// pays none of this because its input is already known to be UTF-8, so the
 /// gap between `from_slice` and `from_str` on the same bytes is B12's ceiling.
-pub static UTF8_BYTES: AtomicU64 = AtomicU64::new(0);
+pub static UTF8_BYTES: Counter = Counter::new(0);
 /// Calls to that validation (brick B12).
-pub static UTF8_CALLS: AtomicU64 = AtomicU64::new(0);
+pub static UTF8_CALLS: Counter = Counter::new(0);
 
 /// A reading of every counter.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -133,28 +173,28 @@ pub struct Counters {
 #[must_use]
 pub fn snapshot() -> Counters {
     Counters {
-        peek: PEEK.load(Ordering::Relaxed),
-        next: NEXT.load(Ordering::Relaxed),
-        discard: DISCARD.load(Ordering::Relaxed),
-        ws_runs: WS_RUNS.load(Ordering::Relaxed),
-        ws_bytes: WS_BYTES.load(Ordering::Relaxed),
-        d8_calls: D8_CALLS.load(Ordering::Relaxed),
-        d8_hits: D8_HITS.load(Ordering::Relaxed),
-        str_scans: STR_SCANS.load(Ordering::Relaxed),
-        str_bytes: STR_BYTES.load(Ordering::Relaxed),
-        str_copies: STR_COPIES.load(Ordering::Relaxed),
-        str_borrows: STR_BORROWS.load(Ordering::Relaxed),
-        esc_bytes: ESC_BYTES.load(Ordering::Relaxed),
-        esc_hits: ESC_HITS.load(Ordering::Relaxed),
-        esc_frags: ESC_FRAGS.load(Ordering::Relaxed),
-        esc_steps: ESC_STEPS.load(Ordering::Relaxed),
-        keys: KEYS.load(Ordering::Relaxed),
-        raw_captures: RAW_CAPTURES.load(Ordering::Relaxed),
-        raw_bytes: RAW_BYTES.load(Ordering::Relaxed),
-        raw_grows: RAW_GROWS.load(Ordering::Relaxed),
-        raw_shrinks: RAW_SHRINKS.load(Ordering::Relaxed),
-        utf8_bytes: UTF8_BYTES.load(Ordering::Relaxed),
-        utf8_calls: UTF8_CALLS.load(Ordering::Relaxed),
+        peek: get(&PEEK),
+        next: get(&NEXT),
+        discard: get(&DISCARD),
+        ws_runs: get(&WS_RUNS),
+        ws_bytes: get(&WS_BYTES),
+        d8_calls: get(&D8_CALLS),
+        d8_hits: get(&D8_HITS),
+        str_scans: get(&STR_SCANS),
+        str_bytes: get(&STR_BYTES),
+        str_copies: get(&STR_COPIES),
+        str_borrows: get(&STR_BORROWS),
+        esc_bytes: get(&ESC_BYTES),
+        esc_hits: get(&ESC_HITS),
+        esc_frags: get(&ESC_FRAGS),
+        esc_steps: get(&ESC_STEPS),
+        keys: get(&KEYS),
+        raw_captures: get(&RAW_CAPTURES),
+        raw_bytes: get(&RAW_BYTES),
+        raw_grows: get(&RAW_GROWS),
+        raw_shrinks: get(&RAW_SHRINKS),
+        utf8_bytes: get(&UTF8_BYTES),
+        utf8_calls: get(&UTF8_CALLS),
     }
 }
 
@@ -283,9 +323,13 @@ pub const fn accel_linked() -> bool {
 
 /// Add to a counter. Compiles to nothing without `profile`.
 #[inline(always)]
-pub fn add(counter: &AtomicU64, by: u64) {
-    #[cfg(feature = "profile")]
+pub fn add(counter: &Counter, by: u64) {
+    #[cfg(all(feature = "profile", target_has_atomic = "64"))]
     counter.fetch_add(by, Ordering::Relaxed);
+    // saturating rather than wrapping: on a narrow counter a wrap would be a
+    // silently wrong number, and a counter is only ever read as a total
+    #[cfg(all(feature = "profile", not(target_has_atomic = "64")))]
+    counter.fetch_add(Width::try_from(by).unwrap_or(Width::MAX), Ordering::Relaxed);
     #[cfg(not(feature = "profile"))]
     {
         let _ = (counter, by);
