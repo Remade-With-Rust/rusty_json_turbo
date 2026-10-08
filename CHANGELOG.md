@@ -4,6 +4,12 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); performance entries
 carry their measured numbers and method line, never an adjective.
 
+## [0.3.1] — 2026-10-08
+
+Allocator update; no API change (`cargo semver-checks` against crates.io: no semver update required).
+
+- `rusty_alloc-api` (and, where pinned, `rusty_alloc`) `=2.2.5`, part of the portfolio-wide rollout. 2.2.5 fixes 2.2.1–2.2.4 failing to build in an MSVC consumer that unwinds with LTO.
+
 ## [Unreleased]
 
 ### Added

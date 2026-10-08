@@ -45,7 +45,7 @@ name = "serde_json"
 [dependencies]
 # The SIMD island. Ours, pure Rust, no build script, no dependencies of its
 # own -- so the "empty dependency tree" claim in the README still holds.
-rusty_json_turbo-accel = { version = "0.3.0", path = "crates/rusty_json_turbo-accel", default-features = false, optional = true }
+rusty_json_turbo-accel = { version = "0.3.1", path = "crates/rusty_json_turbo-accel", default-features = false, optional = true }
 indexmap = { version = "2.2.3", optional = true }
 itoa = "1.0"
 memchr = { version = "2", default-features = false }
@@ -212,7 +212,7 @@ exclude = ["fuzz", "tests/crate"]
 # bytes are checksum-matched to native). A minor bump under 0.x because
 # `counters::accel_linked()` is additive and nothing else in the public surface
 # moved; the output contract is unchanged and still gated per commit.
-version = "0.3.0"
+version = "0.3.1"
 edition = "2021"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/Remade-With-Rust/rusty_json_turbo"
