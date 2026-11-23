@@ -12,6 +12,16 @@ Allocator update; no API change (`cargo semver-checks` against crates.io: no sem
 
 ## [Unreleased]
 
+## [0.3.3](https://github.com/Remade-With-Rust/rusty_json_turbo/compare/rusty_json_turbo-v0.3.2...rusty_json_turbo-v0.3.3) - 2026-11-23
+
+### Other
+
+- bump rusty_alloc-api to 2.6.0 ([#7](https://github.com/Remade-With-Rust/rusty_json_turbo/pull/7))
+- 278 active installs
+- 244 active installs
+- 226 active installs
+- 217 active installs
+
 ## [0.3.2](https://github.com/Remade-With-Rust/rusty_json_turbo/compare/rusty_json_turbo-v0.3.1...rusty_json_turbo-v0.3.2) - 2026-10-17
 
 ### Other
